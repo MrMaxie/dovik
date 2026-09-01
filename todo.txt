@@ -1,4 +1,4 @@
-2026-09-01 Evaluate GUI and MCP clients after the local control protocol is stable.
+2026-09-01 Evaluate the MCP client after the local control protocol is stable.
 2026-09-01 Define optional Cadder endpoint allocation after the standalone process lifecycle is accepted.
 2026-09-01 Evaluate github.com/Microsoft/go-winio for Windows Named Pipe transport with an explicit current-user security descriptor when the control plane is implemented.
 2026-09-01 Evaluate golang.org/x/sys/windows for Job Object process-tree ownership when the native Windows lifecycle adapter is implemented.
