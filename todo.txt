@@ -14,3 +14,6 @@
 2026-09-01 Evaluate github.com/stretchr/testify/require alongside go-cmp only if standard testing produces repetitive fatal setup assertions.
 2026-09-01 Evaluate github.com/rogpeppe/go-internal/testscript for cross-platform CLI command scenarios when the complete command surface is implemented.
 2026-09-01 Evaluate golang.org/x/term only if CLI rendering must distinguish interactive terminals from redirected or agent-consumed output.
+2026-09-01 Define an optional GitHub CLI execution gate that runs gh through Dovik under an explicitly selected account, verifies repository and account context before identity-sensitive operations, preserves native gh arguments, output, and exit codes, and remains bypassable when disabled.
+2026-09-01 Define the local identity profile and credential boundary for GitHub CLI execution, including account selection, repository intent, session state, secret handling, and CLI and TUI visibility without storing credentials in the project registry.
+2026-09-01 Evaluate replacing the current git-user selector with Dovik identity profiles that align repository-local Git author settings with the selected GitHub CLI account, while keeping Git command interception outside scope until separately accepted.
