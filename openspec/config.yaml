@@ -1,0 +1,10 @@
+# arcantry:generated
+schema: arcantry
+
+context: |
+  Dovik is a local daemon for supervising development processes that belong to local projects.
+  It owns process lifecycle, runtime state, output capture, and local client control.
+  It does not own DNS, HTTPS, reverse proxying, domains, remote execution, scheduling, or container orchestration.
+  Cadder is an independent future extension point and is not required by Dovik.
+  Active changes describe planned behavior; only archived specifications describe accepted behavior.
+  Project-facing artifacts are written in English.

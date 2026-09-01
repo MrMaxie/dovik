@@ -1,0 +1,16 @@
+2026-09-01 Evaluate GUI and MCP clients after the local control protocol is stable.
+2026-09-01 Define optional Cadder endpoint allocation after the standalone process lifecycle is accepted.
+2026-09-01 Evaluate github.com/Microsoft/go-winio for Windows Named Pipe transport with an explicit current-user security descriptor when the control plane is implemented.
+2026-09-01 Evaluate golang.org/x/sys/windows for Job Object process-tree ownership when the native Windows lifecycle adapter is implemented.
+2026-09-01 Evaluate github.com/moby/sys/atomicwriter against a small platform adapter for flushed atomic registry replacement before persistence is implemented.
+2026-09-01 Evaluate github.com/adrg/xdg for private state and runtime paths across Windows and Linux, including explicit directory permission checks.
+2026-09-01 Evaluate github.com/alecthomas/kong against the standard flag package and github.com/spf13/cobra before implementing the hierarchical CLI.
+2026-09-01 Evaluate github.com/google/uuid for project and runtime instance IDs before the JSON wire format is finalized.
+2026-09-01 Evaluate github.com/google/go-cmp as a test-only dependency when state-machine and protocol tests need structural diffs.
+2026-09-01 Keep standard errors, fmt.Errorf with %w, errors.Is, errors.As, and errors.Join as the default error model; evaluate github.com/cockroachdb/errors only if stack-bearing or redaction-safe diagnostics become a concrete requirement.
+2026-09-01 Evaluate golang.org/x/sync/errgroup for cancellation-aware daemon goroutines and concurrent stdout and stderr readers when lifecycle services are implemented.
+2026-09-01 Evaluate go.uber.org/goleak as a test-only dependency for daemon shutdown, IPC, and output-capture tests that must prove goroutine cleanup.
+2026-09-01 Prefer the standard testing/synctest package for deterministic lifecycle and timeout tests before introducing an external clock abstraction.
+2026-09-01 Evaluate github.com/stretchr/testify/require alongside go-cmp only if standard testing produces repetitive fatal setup assertions.
+2026-09-01 Evaluate github.com/rogpeppe/go-internal/testscript for cross-platform CLI command scenarios when the complete command surface is implemented.
+2026-09-01 Evaluate golang.org/x/term only if CLI rendering must distinguish interactive terminals from redirected or agent-consumed output.
