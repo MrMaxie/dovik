@@ -38,6 +38,7 @@ just lint
 just check
 just run
 just run-cli
+just tui
 just test-linux
 just test-integration
 just run-linux
@@ -71,3 +72,39 @@ just run-cli process stop --project example --process api
 ```
 
 Use the corresponding `project list` and `process list --project example` commands to inspect definitions. Remove an inactive process with `process remove`, then remove its empty project with `project remove`.
+
+### Automation and JSON output
+
+Every non-interactive command accepts the global `--json` flag before the command name. A successful command writes one JSON document to standard output. Validation, connection, protocol, and daemon failures write one structured JSON error to standard error and return a non-zero exit status.
+
+```console
+just run-cli --json project list
+just run-cli --json process status --project example --process api
+just run-cli --json process logs --project example --process api --tail 100
+```
+
+Process definitions returned by list commands do not contain environment override values. Environment overrides can be supplied only when adding a process and remain private daemon registry configuration.
+
+## TUI
+
+Start the daemon, then open the interactive terminal client in another terminal:
+
+```console
+just tui
+```
+
+The TUI navigates existing project and process definitions, displays current or most recent runtime state and bounded output, and sends start, stop, and restart operations through the same local daemon protocol as the CLI. Use CLI commands to add or remove definitions.
+
+Key bindings:
+
+- `Up`/`k`, `Down`/`j`: select a process.
+- `s`: start the selected inactive process.
+- `x`: stop the selected active process.
+- `r`: restart the selected active process.
+- `l`: reload definitions and process state.
+- `Page Up`, `Page Down`: scroll output.
+- `d`: show or hide runtime and diagnostic details.
+- `?`: show or hide expanded help.
+- `q` or `Ctrl+C`: quit.
+
+The TUI requires interactive input and output. Use the non-interactive CLI, including `--json`, when streams are redirected or when invoking Dovik from automation.

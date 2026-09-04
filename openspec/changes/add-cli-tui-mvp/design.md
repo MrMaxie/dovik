@@ -43,6 +43,12 @@ Use a focused Go-native TUI library rather than web technologies or a custom ter
 
 Keep protocol access, application state, rendering, and key bindings in separate packages or modules so state transitions can be tested without a real terminal and daemon integration can be tested without snapshotting platform-specific escape sequences.
 
+### Dependency decision
+
+The implementation uses `charm.land/bubbletea/v2` v2.0.9 under the MIT license. This was the current stable module version reported by the Go module proxy on 2026-09-04, requires Go 1.25, and is compatible with the project's Go 1.27 toolchain. Bubble Tea provides the event loop, alternate-screen lifecycle, terminal resizing, input handling, and terminal restoration.
+
+The implementation also uses `github.com/charmbracelet/x/term` v0.2.2 under the MIT license for cross-platform interactive-terminal detection. No Bubbles or Lip Gloss dependency is needed for the MVP because the functional layout and state cues are intentionally text-based and testable without color or component styling.
+
 ## Verification
 
 CLI tests cover arguments, output streams, JSON schemas, exit statuses, redaction, and transport and daemon errors. TUI model tests use a fake protocol client and deterministic ticks to cover loading, refresh, selection changes, lifecycle actions, stale responses, truncation, failures, resizing, and terminal cleanup.

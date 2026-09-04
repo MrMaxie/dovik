@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
+	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
@@ -72,6 +73,12 @@ func TestLinuxContainerLifecycle(t *testing.T) {
 	if !strings.Contains(logs, "[stdout]") || !strings.Contains(logs, "[stderr]") {
 		t.Fatalf("logs output = %q, want attributed stdout and stderr", logs)
 	}
+	execDovikTUI(t, ctx, container)
+	statusAfterTUI := execDovik(t, ctx, container, "process", "status", "--project", "fixture", "--process", "worker")
+	if !strings.Contains(statusAfterTUI, "\tstopped\t") {
+		t.Fatalf("status after TUI stop = %q, want stopped", statusAfterTUI)
+	}
+	execDovik(t, ctx, container, "process", "start", "--project", "fixture", "--process", "worker")
 
 	stopOutput := execDovik(t, ctx, container, "process", "stop", "--project", "fixture", "--process", "worker")
 	if !strings.Contains(stopOutput, "\tstopped\t") {
@@ -93,6 +100,22 @@ func TestLinuxContainerLifecycle(t *testing.T) {
 	projects := execDovik(t, ctx, container, "project", "list")
 	if !strings.Contains(projects, "fixture\t/tmp") {
 		t.Fatalf("projects after daemon restart = %q, want persisted fixture", projects)
+	}
+}
+
+func execDovikTUI(t *testing.T, ctx context.Context, container testcontainers.Container) {
+	t.Helper()
+	command := []string{"sh", "-c", "(sleep 2; printf x; sleep 2; printf q) | script -qec 'dovik tui' /dev/null"}
+	exitCode, reader, err := container.Exec(ctx, command, tcexec.Multiplexed())
+	if err != nil {
+		t.Fatalf("exec container TUI: %v", err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read container TUI output: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("container TUI exit code = %d, output = %q", exitCode, output)
 	}
 }
 

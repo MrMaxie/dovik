@@ -19,3 +19,10 @@ COPY --from=build /out/dovik /usr/local/bin/dovik
 COPY --from=build /out/dovikd /usr/local/bin/dovikd
 USER dovik
 ENTRYPOINT ["/usr/local/bin/dovikd"]
+
+FROM runtime AS integration
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends util-linux \
+    && rm -rf /var/lib/apt/lists/*
+USER dovik

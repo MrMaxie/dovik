@@ -22,6 +22,9 @@ run *args:
 run-cli *args:
     mise exec -- go run ./cmd/dovik {{args}}
 
+tui:
+    mise exec -- go run ./cmd/dovik tui
+
 openspec-check:
     openspec schema validate arcantry
     openspec validate --all --strict --no-interactive

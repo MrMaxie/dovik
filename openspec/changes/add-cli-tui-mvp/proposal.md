@@ -28,3 +28,8 @@ The target remains SemVer `1.0.0` in soak. This change prepares an additional us
 - persistent logs, log search, log export, or output from runtimes older than the current or most recent runtime;
 - mouse-only controls, themes, plugins, dashboards, alerts, scheduling, or automatic restart policies;
 - Cadder integration or endpoint allocation.
+
+## Implementation status
+
+**Status:** Implementation Complete
+**Completed:** 2026-09-04
