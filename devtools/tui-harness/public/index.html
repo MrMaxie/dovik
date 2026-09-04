@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dovik TUI Harness</title>
+    <link rel="stylesheet" href="/vendor/xterm.css">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="harness">
+      <header class="toolbar">
+        <div>
+          <p class="eyebrow">DEVELOPMENT HARNESS</p>
+          <h1>Dovik TUI</h1>
+        </div>
+        <div class="process-summary" aria-live="polite">
+          <span class="status-dot" data-testid="status-dot"></span>
+          <span data-testid="process-status">Connecting</span>
+          <span class="pid" data-testid="process-pid"></span>
+        </div>
+        <button type="button" data-testid="restart">Restart process</button>
+      </header>
+
+      <section class="terminal-panel" aria-label="Dovik terminal">
+        <div id="terminal" data-testid="terminal"></div>
+      </section>
+
+      <section class="log-panel" aria-labelledby="log-title">
+        <header>
+          <div>
+            <p class="eyebrow">LIVE DIAGNOSTICS</p>
+            <h2 id="log-title">Application log</h2>
+          </div>
+          <button type="button" class="secondary" data-testid="clear-logs">Clear logs</button>
+        </header>
+        <div class="log-output" data-testid="log-output" role="log" aria-live="polite"></div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

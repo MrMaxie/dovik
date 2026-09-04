@@ -25,11 +25,19 @@ run-cli *args:
 tui:
     mise exec -- go run ./cmd/dovik tui
 
+tui-web:
+    mise exec -- npm --prefix devtools/tui-harness install --no-audit --no-fund
+    mise exec -- node devtools/tui-harness/server.mjs
+
 openspec-check:
     openspec schema validate arcantry
     openspec validate --all --strict --no-interactive
 
-check: lint test build openspec-check
+test-tui-web:
+    mise exec -- npm --prefix devtools/tui-harness install --no-audit --no-fund
+    mise exec -- npm --prefix devtools/tui-harness test
+
+check: lint test build test-tui-web openspec-check
 
 test-linux:
     docker build --target test --tag dovik-test .

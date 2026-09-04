@@ -85,6 +85,7 @@ func NewModel(ctx context.Context, client operatorclient.Client) Model {
 }
 
 func (model Model) Init() tea.Cmd {
+	devLog("model.initialized")
 	return tea.Batch(model.loadRegistryCmd(), tickCmd())
 }
 
@@ -93,12 +94,15 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		model.width = message.Width
 		model.height = message.Height
+		devLog("terminal.size", "cols", message.Width, "rows", message.Height)
 		return model, nil
 	case tea.KeyPressMsg:
+		devLogKey(message.String())
 		return model.updateKey(message.String())
 	case registryLoadedMsg:
 		model.loading = false
 		if message.err != nil {
+			devLog("registry.failed", "error", message.err.Error())
 			model.statusKnown = false
 			model.notice = "Process state is unavailable. Press l to retry."
 			model.diagnostic = message.err.Error()
@@ -113,6 +117,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.resetSelection()
 		model.notice = ""
 		model.diagnostic = ""
+		devLog("registry.loaded", "processes", len(model.items))
 		if len(model.items) == 0 {
 			return model, nil
 		}
@@ -120,10 +125,12 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return model, model.refreshCmd()
 	case refreshMsg:
 		if message.key != model.selectedKey() || message.generation != model.generation {
+			devLog("refresh.ignored", "reason", "stale selection")
 			return model, nil
 		}
 		model.refreshing = false
 		if message.err != nil {
+			devLog("refresh.failed", "error", message.err.Error())
 			model.notice = "Process state is unavailable. Press l to retry."
 			model.diagnostic = message.err.Error()
 			return model, nil
@@ -134,6 +141,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.truncated = model.truncated || message.tail.Truncated
 		model.notice = ""
 		model.diagnostic = ""
+		devLog("refresh.completed", "project", message.key.projectID, "process", message.key.processID, "state", model.currentState(), "events", len(message.tail.Events), "truncated", message.tail.Truncated)
 		return model, nil
 	case actionMsg:
 		model.pending = false
@@ -141,6 +149,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return model, nil
 		}
 		if message.err != nil {
+			devLog("action.failed", "action", message.action, "error", message.err.Error())
 			model.notice = strings.ToUpper(message.action[:1]) + message.action[1:] + " did not complete. Use the same key to retry."
 			model.diagnostic = message.err.Error()
 			return model, nil
@@ -149,6 +158,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.statusKnown = true
 		model.notice = ""
 		model.diagnostic = ""
+		devLog("action.completed", "action", message.action, "project", message.key.projectID, "process", message.key.processID, "state", model.currentState())
 		if !model.refreshing {
 			model.refreshing = true
 			return model, model.refreshCmd()
@@ -210,6 +220,13 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 	return model, nil
 }
 
+func devLogKey(key string) {
+	switch key {
+	case "q", "ctrl+c", "?", "d", "up", "k", "down", "j", "pgup", "pgdown", "l", "s", "x", "r":
+		devLog("input.key", "key", key)
+	}
+}
+
 func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
 	if model.pending || len(model.items) == 0 {
 		return model, nil
@@ -226,6 +243,7 @@ func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
 	model.refreshing = false
 	model.pending = true
 	model.notice = action + " pending..."
+	devLog("action.started", "action", action, "project", model.items[model.selected].key.projectID, "process", model.items[model.selected].key.processID)
 	return model, model.actionCmd(action)
 }
 

@@ -23,6 +23,7 @@ Use configured todo.txt sources for quick intake and changelog sources for consu
 ## Development and release
 
 - Use Go, `mise`, and `just` through the repository configuration.
+- Use `just tui-web` as the standard visual verification path when changing the TUI layout, colors, styling, navigation, keyboard interactions, or visual behavior. Inspect the rendered browser terminal and capture a screenshot for visual changes; use the adjacent live diagnostic log when investigating behavior.
 - Do not add frameworks or dependencies without a direct use in the current implementation.
 - Add Testcontainers only with the first functional Linux runtime integration test and keep it out of unit tests and native Windows process tests.
 - Treat `1.0.0` as the SemVer target currently in soak, not as a public stable release.
