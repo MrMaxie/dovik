@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/MrMaxie/dovik/internal/operatorclient"
 	"github.com/MrMaxie/dovik/internal/supervision"
 )
@@ -28,6 +30,11 @@ type processKey struct {
 type processItem struct {
 	key     processKey
 	command string
+}
+
+type outputLine struct {
+	stream supervision.OutputStream
+	text   string
 }
 
 type registryLoadedMsg struct {
@@ -56,32 +63,33 @@ type tickMsg time.Time
 
 // Model is the terminal-independent TUI state machine.
 type Model struct {
-	ctx         context.Context
-	client      operatorclient.Client
-	items       []processItem
-	selected    int
-	generation  uint64
-	width       int
-	height      int
-	loading     bool
-	refreshing  bool
-	pending     bool
-	runtime     supervision.ProcessRuntime
-	hasRuntime  bool
-	statusKnown bool
-	events      []supervision.OutputEvent
-	truncated   bool
-	lastSeq     uint64
-	scroll      int
-	showHelp    bool
-	showDetail  bool
-	notice      string
-	diagnostic  string
+	ctx          context.Context
+	client       operatorclient.Client
+	items        []processItem
+	selected     int
+	generation   uint64
+	width        int
+	height       int
+	loading      bool
+	refreshing   bool
+	pending      bool
+	runtime      supervision.ProcessRuntime
+	hasRuntime   bool
+	statusKnown  bool
+	events       []supervision.OutputEvent
+	truncated    bool
+	lastSeq      uint64
+	scroll       int
+	showHelp     bool
+	showDetail   bool
+	notice       string
+	diagnostic   string
+	presentation presentation
 }
 
 // NewModel creates a model backed exclusively by the shared daemon client.
 func NewModel(ctx context.Context, client operatorclient.Client) Model {
-	return Model{ctx: ctx, client: client, loading: true}
+	return Model{ctx: ctx, client: client, loading: true, presentation: newPresentation(colorEnabledFromEnvironment())}
 }
 
 func (model Model) Init() tea.Cmd {
@@ -139,8 +147,10 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.statusKnown = true
 		model.appendEvents(message.tail.Events)
 		model.truncated = model.truncated || message.tail.Truncated
-		model.notice = ""
-		model.diagnostic = ""
+		if model.notice == "Process state is unavailable. Press l to retry." {
+			model.notice = ""
+			model.diagnostic = ""
+		}
 		devLog("refresh.completed", "project", message.key.projectID, "process", message.key.processID, "state", model.currentState(), "events", len(message.tail.Events), "truncated", message.tail.Truncated)
 		return model, nil
 	case actionMsg:
@@ -150,7 +160,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if message.err != nil {
 			devLog("action.failed", "action", message.action, "error", message.err.Error())
-			model.notice = strings.ToUpper(message.action[:1]) + message.action[1:] + " did not complete. Use the same key to retry."
+			model.notice = fmt.Sprintf("%s did not complete. Press %s to retry.", actionLabel(message.action), actionKey(message.action))
 			model.diagnostic = message.err.Error()
 			return model, nil
 		}
@@ -200,7 +210,7 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 			return model, model.refreshCmd()
 		}
 	case "pgup":
-		model.scroll = min(len(model.events), model.scroll+model.pageHeight())
+		model.scroll = min(len(model.outputLines()), model.scroll+model.pageHeight())
 		return model, nil
 	case "pgdown":
 		model.scroll = max(0, model.scroll-model.pageHeight())
@@ -242,7 +252,8 @@ func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
 	model.generation++
 	model.refreshing = false
 	model.pending = true
-	model.notice = action + " pending..."
+	model.notice = actionLabel(action) + " pending..."
+	model.diagnostic = ""
 	devLog("action.started", "action", action, "project", model.items[model.selected].key.projectID, "process", model.items[model.selected].key.processID)
 	return model, model.actionCmd(action)
 }
@@ -251,104 +262,18 @@ func (model Model) View() tea.View {
 	content := model.render()
 	view := tea.NewView(content)
 	view.AltScreen = true
+	if model.presentation.colorEnabled {
+		view.BackgroundColor = lipgloss.Color(model.presentation.canvasColor)
+		view.ForegroundColor = lipgloss.Color(model.presentation.primaryColor)
+	}
 	return view
 }
 
 func (model Model) render() string {
 	if model.width > 0 && model.height > 0 && (model.width < minimumWidth || model.height < minimumHeight) {
-		return fmt.Sprintf("Dovik\n\nTerminal too small: need at least %dx%d, current %dx%d.\n\n? help  q quit", minimumWidth, minimumHeight, model.width, model.height)
+		return model.renderSmallTerminal()
 	}
-
-	var builder strings.Builder
-	builder.WriteString("Dovik - local process supervisor\n\n")
-	if model.loading {
-		builder.WriteString("Loading registered processes...\n")
-	} else if len(model.items) == 0 {
-		builder.WriteString("No process definitions are registered.\nUse CLI project and process commands to configure Dovik.\n")
-	} else {
-		builder.WriteString("Processes\n")
-		start, end := model.navigatorRange()
-		if start > 0 {
-			builder.WriteString("  ...\n")
-		}
-		var renderedProject supervision.ProjectID
-		for index := start; index < end; index++ {
-			item := model.items[index]
-			if item.key.projectID != renderedProject {
-				fmt.Fprintf(&builder, "  %s\n", item.key.projectID)
-				renderedProject = item.key.projectID
-			}
-			marker := "    "
-			if index == model.selected {
-				marker = ">   "
-			}
-			fmt.Fprintf(&builder, "%s%s  %s\n", marker, item.key.processID, item.command)
-		}
-		if end < len(model.items) {
-			builder.WriteString("  ...\n")
-		}
-		builder.WriteString("\nSelected\n")
-		item := model.items[model.selected]
-		stateLabel := "loading"
-		if model.statusKnown {
-			stateLabel = string(model.currentState())
-		}
-		fmt.Fprintf(&builder, "%s/%s  state=%s", item.key.projectID, item.key.processID, stateLabel)
-		if model.pending {
-			builder.WriteString("  action=pending")
-		}
-		builder.WriteString("\n")
-		if model.statusKnown && model.currentState().IsActive() {
-			builder.WriteString("Actions: x stop  r restart\n")
-		} else if model.statusKnown {
-			builder.WriteString("Actions: s start\n")
-		} else {
-			builder.WriteString("Actions: waiting for process state\n")
-		}
-		if model.showDetail {
-			builder.WriteString(model.renderDetails())
-		}
-		builder.WriteString("\nOutput\n")
-		if model.truncated {
-			builder.WriteString("[output truncated: older events are unavailable]\n")
-		}
-		for _, event := range model.visibleEvents() {
-			fmt.Fprintf(&builder, "[%s] %s", event.Stream, event.Data)
-			if len(event.Data) == 0 || event.Data[len(event.Data)-1] != '\n' {
-				builder.WriteByte('\n')
-			}
-		}
-	}
-	if model.notice != "" {
-		fmt.Fprintf(&builder, "\n%s\n", model.notice)
-	}
-	if model.showDetail && model.diagnostic != "" {
-		fmt.Fprintf(&builder, "Diagnostic: %s\n", model.diagnostic)
-	}
-	if model.showHelp {
-		builder.WriteString("\nKeys\nup/k down/j select  s start  x stop  r restart  l refresh\nd details  pgup/pgdown output  ? close help  q quit\n")
-	} else {
-		builder.WriteString("\nup/down select  s start  x stop  r restart  l refresh  d details  ? help  q quit\n")
-	}
-	return builder.String()
-}
-
-func (model Model) renderDetails() string {
-	if !model.hasRuntime {
-		return "Details: no runtime has started\n"
-	}
-	pid := "-"
-	if model.runtime.PID != nil {
-		pid = fmt.Sprint(*model.runtime.PID)
-	}
-	started := formatTime(model.runtime.StartedAt)
-	finished := formatTime(model.runtime.FinishedAt)
-	exitCode := "-"
-	if model.runtime.ExitCode != nil {
-		exitCode = fmt.Sprint(*model.runtime.ExitCode)
-	}
-	return fmt.Sprintf("Details: instance=%s pid=%s started=%s finished=%s exit=%s reason=%s\n",
-		model.runtime.InstanceID, pid, started, finished, exitCode, emptyAsDash(model.runtime.TerminationReason))
+	return model.renderWorkspace()
 }
 
 func (model *Model) resetSelection() {
@@ -390,32 +315,43 @@ func (model *Model) appendEvents(events []supervision.OutputEvent) {
 	}
 }
 
-func (model Model) visibleEvents() []supervision.OutputEvent {
+func (model Model) outputLines() []outputLine {
+	lines := make([]outputLine, 0, len(model.events))
+	for _, event := range model.events {
+		data := strings.ReplaceAll(string(event.Data), "\r\n", "\n")
+		data = strings.TrimSuffix(data, "\n")
+		parts := strings.Split(data, "\n")
+		for _, part := range parts {
+			lines = append(lines, outputLine{stream: event.Stream, text: part})
+		}
+	}
+	return lines
+}
+
+func (model Model) visibleOutputLines() []outputLine {
+	lines := model.outputLines()
 	height := model.pageHeight()
-	end := max(0, len(model.events)-model.scroll)
+	end := max(0, len(lines)-model.scroll)
 	start := max(0, end-height)
-	return model.events[start:end]
+	return lines[start:end]
 }
 
 func (model Model) pageHeight() int {
-	if model.height <= 0 {
+	if model.height <= 0 || model.width <= 0 {
 		return 8
 	}
-	return max(3, model.height-14-model.navigatorHeight())
-}
-
-func (model Model) navigatorHeight() int {
-	if model.height <= 0 {
-		return min(8, len(model.items))
+	layout := model.workspaceLayout()
+	reserved := 3
+	if model.truncated {
+		reserved++
 	}
-	return max(3, min(len(model.items), model.height/3))
+	return max(1, layout.outputHeight-reserved)
 }
 
-func (model Model) navigatorRange() (int, int) {
-	height := model.navigatorHeight()
-	start := max(0, model.selected-height/2)
-	end := min(len(model.items), start+height)
-	start = max(0, end-height)
+func (model Model) navigatorRange(capacity int) (int, int) {
+	start := max(0, model.selected-capacity/2)
+	end := min(len(model.items), start+capacity)
+	start = max(0, end-capacity)
 	return start, end
 }
 
@@ -465,11 +401,44 @@ func (model Model) loadRegistryCmd() tea.Cmd {
 			for _, process := range processes {
 				items = append(items, processItem{
 					key:     processKey{projectID: process.ProjectID, processID: process.ID},
-					command: process.Command,
+					command: formatCommand(process.Command, process.Arguments),
 				})
 			}
 		}
 		return registryLoadedMsg{items: items}
+	}
+}
+
+func formatCommand(command string, arguments []string) string {
+	parts := make([]string, 0, len(arguments)+1)
+	parts = append(parts, command)
+	for _, argument := range arguments {
+		if strings.ContainsAny(argument, " \t\"") {
+			parts = append(parts, strconv.Quote(argument))
+		} else {
+			parts = append(parts, argument)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func actionLabel(action string) string {
+	if action == "" {
+		return "Action"
+	}
+	return strings.ToUpper(action[:1]) + action[1:]
+}
+
+func actionKey(action string) string {
+	switch action {
+	case "start":
+		return "s"
+	case "stop":
+		return "x"
+	case "restart":
+		return "r"
+	default:
+		return "the action key"
 	}
 }
 

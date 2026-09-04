@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/MrMaxie/dovik/internal/supervision"
 )
 
@@ -76,6 +77,7 @@ func TestModelLoadsStatusAndAttributedOutput(t *testing.T) {
 		}},
 	}
 	model := NewModel(context.Background(), client)
+	model.presentation = newPresentation(false)
 	model.width, model.height = 100, 30
 
 	loaded, command := updateModel(t, model, model.loadRegistryCmd()())
@@ -84,7 +86,7 @@ func TestModelLoadsStatusAndAttributedOutput(t *testing.T) {
 	}
 	refreshed, _ := updateModel(t, loaded, command())
 	view := refreshed.View().Content
-	for _, expected := range []string{"project/api", "state=running", "[stdout] ready", "[stderr] warning", "output truncated"} {
+	for _, expected := range []string{"project / api", "[RUNNING]", "Command  server", "[stdout] ready", "[stderr] warning", "Older output is unavailable"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("view missing %q:\n%s", expected, view)
 		}
@@ -105,6 +107,7 @@ func TestModelIgnoresStaleRefreshAfterSelectionChange(t *testing.T) {
 		tails:    map[processKey]supervision.OutputTail{},
 	}
 	model := NewModel(context.Background(), client)
+	model.presentation = newPresentation(false)
 	loaded, staleCommand := updateModel(t, model, model.loadRegistryCmd()())
 	changed, currentCommand := updateModel(t, loaded, key("down"))
 	if currentCommand == nil {
@@ -130,6 +133,7 @@ func TestModelSerializesActionsAndKeepsDiagnosticsOnDemand(t *testing.T) {
 		actionErr: errors.New("raw transport detail"),
 	}
 	model := NewModel(context.Background(), client)
+	model.presentation = newPresentation(false)
 	loaded, refreshCommand := updateModel(t, model, model.loadRegistryCmd()())
 	loaded, _ = updateModel(t, loaded, refreshCommand())
 	pending, actionCommand := updateModel(t, loaded, key("s"))
@@ -142,13 +146,22 @@ func TestModelSerializesActionsAndKeepsDiagnosticsOnDemand(t *testing.T) {
 		t.Fatalf("primary view exposed diagnostics or action count = %d:\n%s", client.starts, failed.View().Content)
 	}
 	detailed, _ := updateModel(t, failed, key("d"))
-	if !strings.Contains(detailed.View().Content, "Diagnostic: raw transport detail") {
+	if !strings.Contains(detailed.View().Content, "Diagnostic  raw transport detail") {
 		t.Fatalf("details did not expose diagnostic on demand:\n%s", detailed.View().Content)
+	}
+	refreshed, _ := updateModel(t, failed, refreshMsg{
+		key:        processKey{projectID: "project", processID: "api"},
+		generation: failed.generation,
+		runtime:    supervision.ProcessRuntime{ProjectID: "project", ProcessID: "api", State: supervision.ProcessStateStopped},
+	})
+	if !strings.Contains(refreshed.View().Content, "Start did not complete. Press s to retry.") {
+		t.Fatalf("successful polling hid the action failure before a retry:\n%s", refreshed.View().Content)
 	}
 }
 
 func TestModelHandlesMinimumTerminalSize(t *testing.T) {
 	model := NewModel(context.Background(), &fakeClient{})
+	model.presentation = newPresentation(false)
 	updated, _ := updateModel(t, model, tea.WindowSizeMsg{Width: 40, Height: 10})
 	view := updated.View().Content
 	if !strings.Contains(view, "Terminal too small") || !strings.Contains(view, "? help  q quit") {
@@ -167,6 +180,7 @@ func TestModelResetsSequenceWhenRuntimeChanges(t *testing.T) {
 		}},
 	}
 	model := NewModel(context.Background(), client)
+	model.presentation = newPresentation(false)
 	model.items = []processItem{{key: process}}
 	model.hasRuntime = true
 	model.runtime = supervision.ProcessRuntime{ProjectID: "project", ProcessID: "api", InstanceID: "old", State: supervision.ProcessStateRunning}
@@ -201,5 +215,143 @@ func TestFormatTime(t *testing.T) {
 	value := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	if got := formatTime(&value); got != "2026-09-04T12:00:00Z" {
 		t.Fatalf("formatTime() = %q", got)
+	}
+}
+
+func TestPresentationUsesWideAndCompactWorkspaces(t *testing.T) {
+	model := Model{
+		items:        []processItem{{key: processKey{projectID: "dovik", processID: "api"}, command: "go run ./cmd/api --dev"}},
+		statusKnown:  true,
+		hasRuntime:   true,
+		runtime:      supervision.ProcessRuntime{State: supervision.ProcessStateRunning},
+		presentation: newPresentation(false),
+	}
+
+	model.width, model.height = 120, 34
+	wide := model.View().Content
+	wideHeader := strings.Split(wide, "\n")[1]
+	if lipgloss.Width(wide) != 120 || lipgloss.Height(wide) != 34 || strings.Count(wideHeader, "┌") != 2 || !strings.Contains(wide, "dovik / api") {
+		t.Fatalf("wide workspace dimensions = %dx%d:\n%s", lipgloss.Width(wide), lipgloss.Height(wide), wide)
+	}
+
+	model.width, model.height = 80, 24
+	compact := model.View().Content
+	compactLines := strings.Split(compact, "\n")
+	if lipgloss.Width(compact) != 80 || lipgloss.Height(compact) != 24 || strings.Count(compactLines[1], "┌") != 1 || !strings.Contains(compact, "Command  go run ./cmd/api --dev") {
+		t.Fatalf("compact workspace dimensions = %dx%d:\n%s", lipgloss.Width(compact), lipgloss.Height(compact), compact)
+	}
+}
+
+func TestPresentationKeepsMeaningWithoutColor(t *testing.T) {
+	model := Model{
+		width:        100,
+		height:       30,
+		items:        []processItem{{key: processKey{projectID: "project", processID: "api"}, command: "server"}},
+		statusKnown:  true,
+		hasRuntime:   true,
+		runtime:      supervision.ProcessRuntime{State: supervision.ProcessStateFailed},
+		presentation: newPresentation(false),
+		notice:       "Restart did not complete. Press r to retry.",
+		diagnostic:   "transport detail",
+		truncated:    true,
+		events: []supervision.OutputEvent{
+			{Sequence: 1, Stream: supervision.OutputStreamStdout, Data: []byte("ready\n")},
+			{Sequence: 2, Stream: supervision.OutputStreamStderr, Data: []byte("failed\n")},
+		},
+	}
+
+	view := model.View().Content
+	if strings.Contains(view, "\x1b[") {
+		t.Fatalf("color-disabled presentation emitted ANSI styling: %q", view)
+	}
+	for _, expected := range []string{"> project / api", "[FAILED]", "Restart did not complete", "[stdout] ready", "[stderr] failed", "Older output is unavailable"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("color-disabled view missing %q:\n%s", expected, view)
+		}
+	}
+}
+
+func TestPresentationStylesLifecycleStatesSemantically(t *testing.T) {
+	p := newPresentation(true)
+	running := p.renderState(string(supervision.ProcessStateRunning))
+	failed := p.renderState(string(supervision.ProcessStateFailed))
+	pending := p.renderState(string(supervision.ProcessStateStarting))
+	if running == failed || failed == pending || !strings.Contains(running, "RUNNING") || !strings.Contains(failed, "FAILED") || !strings.Contains(pending, "STARTING") {
+		t.Fatalf("state styles are not semantically distinct: running=%q failed=%q pending=%q", running, failed, pending)
+	}
+}
+
+func TestPresentationKeepsRuntimeDiagnosticsBehindDetails(t *testing.T) {
+	pid := 4242
+	model := Model{
+		width:        80,
+		height:       24,
+		items:        []processItem{{key: processKey{projectID: "project", processID: "api"}, command: "server"}},
+		statusKnown:  true,
+		hasRuntime:   true,
+		runtime:      supervision.ProcessRuntime{InstanceID: "instance", PID: &pid, State: supervision.ProcessStateRunning},
+		presentation: newPresentation(false),
+	}
+	if view := model.View().Content; strings.Contains(view, "PID") || strings.Contains(view, "instance") {
+		t.Fatalf("default operator workspace exposed diagnostics:\n%s", view)
+	}
+	model.showDetail = true
+	view := model.View().Content
+	if !strings.Contains(view, "RUNTIME DETAILS") || !strings.Contains(view, "PID  4242") || !strings.Contains(view, "Instance  instance") {
+		t.Fatalf("details view omitted runtime diagnostics:\n%s", view)
+	}
+}
+
+func TestPresentationAttributesEveryOutputLine(t *testing.T) {
+	model := Model{
+		width:        80,
+		height:       24,
+		items:        []processItem{{key: processKey{projectID: "project", processID: "api"}}},
+		statusKnown:  true,
+		presentation: newPresentation(false),
+		events: []supervision.OutputEvent{{
+			Sequence: 1,
+			Stream:   supervision.OutputStreamStdout,
+			Data:     []byte("first\nsecond\n"),
+		}},
+	}
+	view := model.View().Content
+	if strings.Count(view, "[stdout]") != 2 || !strings.Contains(view, "[stdout] second") {
+		t.Fatalf("multiline output lost stream attribution:\n%s", view)
+	}
+}
+
+func TestResizePreservesOperatorState(t *testing.T) {
+	model := Model{
+		width:        120,
+		height:       34,
+		items:        []processItem{{key: processKey{projectID: "project", processID: "api"}}},
+		statusKnown:  true,
+		showDetail:   true,
+		showHelp:     true,
+		scroll:       3,
+		presentation: newPresentation(false),
+	}
+	updated, _ := updateModel(t, model, tea.WindowSizeMsg{Width: 80, Height: 24})
+	if updated.selected != model.selected || updated.scroll != model.scroll || !updated.showDetail || !updated.showHelp {
+		t.Fatalf("resize changed operator state: before=%#v after=%#v", model, updated)
+	}
+}
+
+func TestFormatCommandQuotesArgumentsWithSpaces(t *testing.T) {
+	if got := formatCommand("server", []string{"--name", "Dovik API"}); got != `server --name "Dovik API"` {
+		t.Fatalf("formatCommand() = %q", got)
+	}
+}
+
+func TestPresentationShortcutBarReflectsOpenPanel(t *testing.T) {
+	model := Model{presentation: newPresentation(false)}
+	model.showDetail = true
+	if got := model.presentation.renderShortcutBar(model, 80); !strings.Contains(got, "[d] Close details") {
+		t.Fatalf("details shortcut did not describe the active action: %q", got)
+	}
+	model.showHelp = true
+	if got := model.presentation.renderShortcutBar(model, 80); !strings.Contains(got, "[?] Close help") {
+		t.Fatalf("help shortcut did not describe the active action: %q", got)
 	}
 }

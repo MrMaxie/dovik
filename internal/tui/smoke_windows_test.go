@@ -68,7 +68,7 @@ func TestWindowsNamedPipeTUILifecycleSmoke(t *testing.T) {
 		t.Fatal("start did not request a refresh")
 	}
 	started, _ = updateModel(t, started, refreshCommand())
-	if !strings.Contains(started.View().Content, "state=running") {
+	if !strings.Contains(started.View().Content, "[RUNNING]") {
 		t.Fatalf("TUI view does not show running state:\n%s", started.View().Content)
 	}
 
