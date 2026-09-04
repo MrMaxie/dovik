@@ -31,6 +31,9 @@ check: lint test build openspec-check
 test-linux:
     docker build --target test --tag dovik-test .
 
+test-integration:
+    mise exec -- go test -count=1 -tags=integration ./integration/...
+
 run-linux:
     docker build --target runtime --tag dovik:dev .
     docker run --rm dovik:dev

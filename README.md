@@ -4,7 +4,9 @@ Dovik is a local supervisor for development processes. Its intended responsibili
 
 ## Current status
 
-This repository currently contains the project foundation and the active OpenSpec change for the first working supervisor. Process registration, lifecycle control, IPC, and log retrieval are specified but are not implemented yet. The `dovikd` and `dovik` binaries are deliberately minimal shells that make this status explicit.
+The current implementation provides the first working local supervisor. `dovikd` owns the private project registry, managed process lifecycle, bounded stdout and stderr output, and the versioned local control protocol. `dovik` provides non-interactive commands for registry, lifecycle, status, and log operations.
+
+Native Windows clients connect through a current-user Named Pipe. The Linux image runs `dovikd` as PID 1 and uses a container-local Unix Domain Socket without publishing a network port. The CLI and daemon do not expose stored environment override values through list or status responses.
 
 The target version is `1.0.0` under SemVer. It is currently in soak and has not been published as a stable release.
 
@@ -37,9 +39,35 @@ just check
 just run
 just run-cli
 just test-linux
+just test-integration
 just run-linux
 ```
 
-`just check` runs Go vet, tests, builds, schema validation, and strict validation of all OpenSpec artifacts. `just test-linux` builds the Docker test stage. `just run-linux` builds and runs the Linux runtime image without publishing a port.
+`just check` runs Go vet, tests, builds, schema validation, and strict validation of all OpenSpec artifacts. `just test-linux` builds the Docker test stage. `just test-integration` uses Testcontainers to verify the Linux daemon, CLI, persistence, lifecycle, logs, local socket, and container boundary. `just run-linux` builds and runs the Linux runtime image without publishing a port.
 
-Testcontainers is intentionally not part of the empty foundation. It will be added as a test-only dependency when the first functional Linux runtime integration test exists.
+## CLI
+
+Start the native daemon:
+
+```console
+just run
+```
+
+Register a project and one process from another terminal:
+
+```console
+just run-cli project add --id example --root C:\path\to\project
+just run-cli process add --project example --id api --command C:\path\to\server.exe --arg=serve --env PORT=7881
+```
+
+Operate the registered process:
+
+```console
+just run-cli process start --project example --process api
+just run-cli process status --project example --process api
+just run-cli process logs --project example --process api --tail 100
+just run-cli process restart --project example --process api
+just run-cli process stop --project example --process api
+```
+
+Use the corresponding `project list` and `process list --project example` commands to inspect definitions. Remove an inactive process with `process remove`, then remove its empty project with `project remove`.

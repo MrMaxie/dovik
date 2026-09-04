@@ -2,17 +2,54 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/MrMaxie/dovik/internal/control"
+	"github.com/MrMaxie/dovik/internal/supervision"
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "dovikd: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	registryPath, err := supervision.DefaultRegistryPath()
+	if err != nil {
+		return err
+	}
+	store := supervision.NewFileRegistry(registryPath)
+	registry, err := store.LoadAndReconcile(time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	manager, err := supervision.NewLifecycleManager(registry, store, 1024*1024, 4096)
+	if err != nil {
+		return err
+	}
+	endpoint, err := control.DefaultEndpoint()
+	if err != nil {
+		return err
+	}
+	listener, err := control.ListenLocal(endpoint)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
 
-	fmt.Fprintln(os.Stdout, "Dovik daemon foundation is running; process supervision is not implemented.")
-	<-ctx.Done()
-	fmt.Fprintln(os.Stdout, "Dovik daemon foundation stopped.")
+	fmt.Fprintln(os.Stdout, "Dovik daemon is running.")
+	serveErr := control.NewServer(manager).Serve(ctx, listener)
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelShutdown()
+	shutdownErr := manager.Shutdown(shutdownContext)
+	return errors.Join(serveErr, shutdownErr)
 }
