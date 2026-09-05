@@ -29,25 +29,30 @@ type workspaceLayout struct {
 }
 
 type presentation struct {
-	colorEnabled bool
-	header       lipgloss.Style
-	brand        lipgloss.Style
-	muted        lipgloss.Style
-	section      lipgloss.Style
-	project      lipgloss.Style
-	selected     lipgloss.Style
-	primary      lipgloss.Style
-	command      lipgloss.Style
-	success      lipgloss.Style
-	attention    lipgloss.Style
-	danger       lipgloss.Style
-	stateMuted   lipgloss.Style
-	stdout       lipgloss.Style
-	stderr       lipgloss.Style
-	key          lipgloss.Style
-	border       lipgloss.Style
-	canvasColor  string
-	primaryColor string
+	colorEnabled   bool
+	header         lipgloss.Style
+	brand          lipgloss.Style
+	muted          lipgloss.Style
+	section        lipgloss.Style
+	project        lipgloss.Style
+	selected       lipgloss.Style
+	primary        lipgloss.Style
+	command        lipgloss.Style
+	success        lipgloss.Style
+	attention      lipgloss.Style
+	danger         lipgloss.Style
+	stateMuted     lipgloss.Style
+	stdout         lipgloss.Style
+	stderr         lipgloss.Style
+	key            lipgloss.Style
+	border         lipgloss.Style
+	canvasColor    string
+	surfaceColor   string
+	primaryColor   string
+	mutedColor     string
+	successColor   string
+	attentionColor string
+	dangerColor    string
 }
 
 func newPresentation(colorEnabled bool) presentation {
@@ -64,25 +69,30 @@ func newPresentation(colorEnabled bool) presentation {
 	)
 
 	p := presentation{
-		colorEnabled: colorEnabled,
-		canvasColor:  canvas,
-		primaryColor: primary,
-		header:       lipgloss.NewStyle(),
-		brand:        lipgloss.NewStyle(),
-		muted:        lipgloss.NewStyle(),
-		section:      lipgloss.NewStyle(),
-		project:      lipgloss.NewStyle(),
-		selected:     lipgloss.NewStyle(),
-		primary:      lipgloss.NewStyle(),
-		command:      lipgloss.NewStyle(),
-		success:      lipgloss.NewStyle(),
-		attention:    lipgloss.NewStyle(),
-		danger:       lipgloss.NewStyle(),
-		stateMuted:   lipgloss.NewStyle(),
-		stdout:       lipgloss.NewStyle(),
-		stderr:       lipgloss.NewStyle(),
-		key:          lipgloss.NewStyle(),
-		border:       lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()),
+		colorEnabled:   colorEnabled,
+		canvasColor:    canvas,
+		surfaceColor:   surface,
+		primaryColor:   primary,
+		mutedColor:     muted,
+		successColor:   success,
+		attentionColor: attention,
+		dangerColor:    danger,
+		header:         lipgloss.NewStyle(),
+		brand:          lipgloss.NewStyle(),
+		muted:          lipgloss.NewStyle(),
+		section:        lipgloss.NewStyle(),
+		project:        lipgloss.NewStyle(),
+		selected:       lipgloss.NewStyle(),
+		primary:        lipgloss.NewStyle(),
+		command:        lipgloss.NewStyle(),
+		success:        lipgloss.NewStyle(),
+		attention:      lipgloss.NewStyle(),
+		danger:         lipgloss.NewStyle(),
+		stateMuted:     lipgloss.NewStyle(),
+		stdout:         lipgloss.NewStyle(),
+		stderr:         lipgloss.NewStyle(),
+		key:            lipgloss.NewStyle(),
+		border:         lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()),
 	}
 	if !colorEnabled {
 		return p
@@ -148,7 +158,7 @@ func (model Model) renderWorkspace() string {
 	p := model.presentation
 	width, _ := model.viewportSize()
 	layout := model.workspaceLayout()
-	header := p.renderHeader(width)
+	header := p.renderHeader(model, width)
 	if len(model.items) == 0 {
 		return lipgloss.JoinVertical(lipgloss.Left, header, p.renderRegistryState(model, width, layout.bodyHeight), p.renderShortcutBar(model, width))
 	}
@@ -177,10 +187,46 @@ func (model Model) viewportSize() (int, int) {
 	return width, height
 }
 
-func (p presentation) renderHeader(width int) string {
-	brand := p.brand.Render(" dovik ")
-	title := p.muted.Render(" Local processes")
-	return p.header.Width(width).MaxWidth(width).Render(ansi.Truncate(brand+title, width, ""))
+func (p presentation) renderHeader(model Model, width int) string {
+	brandStyle := p.brand
+	titleStyle := p.muted
+	if p.colorEnabled {
+		background := lipgloss.Color(p.surfaceColor)
+		brandStyle = brandStyle.Background(background)
+		titleStyle = titleStyle.Background(background)
+	}
+	brand := brandStyle.Render(" dovik ")
+	title := titleStyle.Render(" Local processes")
+	status := p.renderDaemonIndicator(model)
+	leftWidth := max(0, width-lipgloss.Width(status)-1)
+	left := ansi.Truncate(brand+title, leftWidth, "")
+	spacing := p.header.Render(strings.Repeat(" ", max(1, width-lipgloss.Width(left)-lipgloss.Width(status))))
+	return p.header.Width(width).MaxWidth(width).Render(ansi.Truncate(left+spacing+status, width, ""))
+}
+
+func (p presentation) renderDaemonIndicator(model Model) string {
+	label := "daemon checking"
+	dotColor := p.mutedColor
+	if model.daemonStarting {
+		label = "daemon starting"
+		dotColor = p.attentionColor
+	} else {
+		switch model.registry {
+		case registryEmpty, registryPopulated:
+			label = "daemon online"
+			dotColor = p.successColor
+		case registryUnavailable:
+			label = "daemon offline"
+			dotColor = p.dangerColor
+		}
+	}
+	if !p.colorEnabled {
+		return "• " + label
+	}
+	background := lipgloss.Color(p.surfaceColor)
+	dot := lipgloss.NewStyle().Foreground(lipgloss.Color(dotColor)).Background(background).Render("•")
+	text := lipgloss.NewStyle().Foreground(lipgloss.Color(p.primaryColor)).Background(background).Render(" " + label)
+	return dot + text
 }
 
 func (p presentation) renderNavigator(model Model, width, height int) string {

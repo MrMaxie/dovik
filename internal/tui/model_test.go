@@ -438,3 +438,41 @@ func TestPresentationShortcutBarReflectsOpenPanel(t *testing.T) {
 		t.Fatalf("help shortcut did not describe the active action: %q", got)
 	}
 }
+
+func TestPresentationShowsDaemonDetectionInTUIHeader(t *testing.T) {
+	tests := []struct {
+		name     string
+		registry registryOutcome
+		starting bool
+		want     string
+	}{
+		{name: "checking", registry: registryLoading, want: "• daemon checking"},
+		{name: "online empty", registry: registryEmpty, want: "• daemon online"},
+		{name: "online populated", registry: registryPopulated, want: "• daemon online"},
+		{name: "starting", registry: registryUnavailable, starting: true, want: "• daemon starting"},
+		{name: "offline", registry: registryUnavailable, want: "• daemon offline"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			model := Model{registry: test.registry, daemonStarting: test.starting}
+			header := newPresentation(false).renderHeader(model, minimumWidth)
+			if lipgloss.Width(header) != minimumWidth || !strings.HasSuffix(header, test.want) {
+				t.Fatalf("header = %q, width = %d, want right-aligned %q", header, lipgloss.Width(header), test.want)
+			}
+			if !strings.Contains(header, "dovik") || strings.Contains(header, "\x1b[") {
+				t.Fatalf("header lost identity or requires color: %q", header)
+			}
+		})
+	}
+}
+
+func TestPresentationColorsOnlyDaemonStatusBullet(t *testing.T) {
+	p := newPresentation(true)
+	got := p.renderDaemonIndicator(Model{registry: registryEmpty})
+	background := lipgloss.Color(p.surfaceColor)
+	want := lipgloss.NewStyle().Foreground(lipgloss.Color(p.successColor)).Background(background).Render("•") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color(p.primaryColor)).Background(background).Render(" daemon online")
+	if got != want {
+		t.Fatalf("daemon indicator = %q, want colored bullet and ordinary header text %q", got, want)
+	}
+}
