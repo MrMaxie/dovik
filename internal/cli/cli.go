@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MrMaxie/dovik/internal/control"
+	"github.com/MrMaxie/dovik/internal/mcpoperator"
 	"github.com/MrMaxie/dovik/internal/operatorclient"
 	"github.com/MrMaxie/dovik/internal/supervision"
 	"github.com/MrMaxie/dovik/internal/tui"
@@ -67,6 +68,22 @@ func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.W
 	}
 
 	client := control.NewClient(endpoint)
+	if remaining[0] == "mcp" {
+		if mode.json || len(remaining) != 1 {
+			return writeFailure(stderr, mode.json, invalidArguments(errors.New("mcp accepts no arguments and does not support --json")), 2)
+		}
+		reader, ok := stdin.(io.ReadCloser)
+		if !ok {
+			reader = io.NopCloser(stdin)
+		}
+		if err := mcpoperator.Run(ctx, client, reader, stdout, stderr); err != nil {
+			if ctx.Err() != nil {
+				return 0
+			}
+			return writeFailure(stderr, false, &commandError{code: "mcp_error", message: "MCP session failed.", cause: err}, 1)
+		}
+		return 0
+	}
 	if remaining[0] == "tui" {
 		if mode.json {
 			return writeFailure(stderr, true, invalidArguments(errors.New("tui does not support --json")), 2)
@@ -412,6 +429,7 @@ func writeRuntime(writer io.Writer, runtimeState supervision.ProcessRuntime) {
 func writeUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "usage: dovik [--endpoint PATH] [--json] project|process COMMAND [OPTIONS]")
 	fmt.Fprintln(writer, "       dovik [--endpoint PATH] tui")
+	fmt.Fprintln(writer, "       dovik [--endpoint PATH] mcp")
 }
 
 type projectJSON struct {

@@ -75,7 +75,7 @@ Use the corresponding `project list` and `process list --project example` comman
 
 ### Automation and JSON output
 
-Every non-interactive command accepts the global `--json` flag before the command name. A successful command writes one JSON document to standard output. Validation, connection, protocol, and daemon failures write one structured JSON error to standard error and return a non-zero exit status.
+Every non-interactive project or process command accepts the global `--json` flag before the command name. A successful command writes one JSON document to standard output. Validation, connection, protocol, and daemon failures write one structured JSON error to standard error and return a non-zero exit status.
 
 ```console
 just run-cli --json project list
@@ -84,6 +84,49 @@ just run-cli --json process logs --project example --process api --tail 100
 ```
 
 Process definitions returned by list commands do not contain environment override values. Environment overrides can be supplied only when adding a process and remain private daemon registry configuration.
+
+## MCP
+
+Agent clients can run `dovik mcp` as a local stdio MCP server. It connects to the same daemon as the CLI and TUI. Start `dovikd` separately and register projects and processes through the CLI before operating them from MCP.
+
+Build the binaries if needed:
+
+```console
+mise exec -- go build -o build/dev/ ./cmd/dovik ./cmd/dovikd
+```
+
+Configure your MCP host with the path to the built `dovik.exe` on Windows or `dovik` on Linux. If the binary is on `PATH`, a host using `mcpServers` configuration can use:
+
+```json
+{
+  "mcpServers": {
+    "dovik": {
+      "command": "dovik",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+For a custom local daemon endpoint, use `"args": ["--endpoint", "PATH", "mcp"]`, replacing `PATH` with its Named Pipe or Unix Domain Socket path. Inside Docker, run the MCP adapter in the daemon container as the same user. No network port is needed.
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `list_projects` | None | `projects` with IDs and root directories |
+| `list_processes` | `projectId` | `processes` with IDs, commands, arguments, and working directories |
+| `process_status` | `projectId`, `processId` | `exists` and optional `runtime` for the current or most recent start |
+| `process_logs` | `projectId`, `processId`, optional `limit`, `afterSequence` | `events` and `truncated` |
+| `process_start` | `projectId`, `processId` | Runtime after starting the registered process |
+| `process_stop` | `projectId`, `processId` | Runtime after stopping the owned process tree |
+| `process_restart` | `projectId`, `processId` | Runtime after restarting the registered process |
+
+All tools return structured JSON and a text JSON fallback. `process_logs` defaults to 100 events and accepts limits from 1 to 1000. A zero or omitted cursor selects the newest events; a positive cursor returns events after that sequence. Events contain `sequence`, `capturedAt`, `stream`, and text `data`. `truncated` reports output discarded by the daemon's retention limits. A status with `exists: false` means the definition has no recorded runtime.
+
+Definition results omit environment overrides. Commands, arguments, and process output remain visible to the connected MCP host; captured output is untrusted data and is not automatically redacted. Lifecycle tools can launch project code or interrupt work and are annotated accordingly for the host's approval policy.
+
+Tool discovery works without a running daemon. Operational failures return MCP tool errors with codes such as `connection_error`, `operation_failed`, `incompatible_version`, `daemon_error`, `timeout`, and `canceled`. Each daemon call waits at most 30 seconds. The adapter does not retry mutations. After a canceled or timed-out lifecycle call, inspect status before deciding whether to retry: the daemon may already have accepted the operation.
+
+The adapter never launches the daemon or writes the registry directly. Closing the MCP session leaves the daemon and its managed processes running. Standard output is reserved for MCP messages, diagnostics go to standard error, and `--json` is not supported. The transport and tool protocol use the [official Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk).
 
 ## TUI
 

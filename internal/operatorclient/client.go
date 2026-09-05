@@ -8,7 +8,7 @@ import (
 	"github.com/MrMaxie/dovik/internal/supervision"
 )
 
-// Client is the complete local control-plane surface used by the CLI and TUI.
+// Client is the local control-plane surface used by the CLI, TUI, and MCP adapter.
 type Client interface {
 	AddProject(context.Context, supervision.ProjectDefinition) (supervision.ProjectDefinition, error)
 	RemoveProject(context.Context, supervision.ProjectID) error
