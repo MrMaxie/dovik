@@ -61,6 +61,15 @@ type actionMsg struct {
 
 type tickMsg time.Time
 
+type registryOutcome uint8
+
+const (
+	registryLoading registryOutcome = iota
+	registryEmpty
+	registryPopulated
+	registryUnavailable
+)
+
 // Model is the terminal-independent TUI state machine.
 type Model struct {
 	ctx          context.Context
@@ -71,6 +80,7 @@ type Model struct {
 	width        int
 	height       int
 	loading      bool
+	registry     registryOutcome
 	refreshing   bool
 	pending      bool
 	runtime      supervision.ProcessRuntime
@@ -110,6 +120,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case registryLoadedMsg:
 		model.loading = false
 		if message.err != nil {
+			model.registry = registryUnavailable
 			devLog("registry.failed", "error", message.err.Error())
 			model.statusKnown = false
 			model.notice = "Process state is unavailable. Press l to retry."
@@ -118,11 +129,18 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		previous := model.selectedKey()
 		model.items = message.items
+		model.registry = registryPopulated
+		if len(model.items) == 0 {
+			model.registry = registryEmpty
+			model.showDetail = false
+		}
 		model.selected = indexOfKey(model.items, previous)
 		if model.selected < 0 && len(model.items) > 0 {
 			model.selected = 0
 		}
-		model.resetSelection()
+		if model.selectedKey() != previous || len(model.items) == 0 {
+			model.resetSelection()
+		}
 		model.notice = ""
 		model.diagnostic = ""
 		devLog("registry.loaded", "processes", len(model.items))
@@ -139,6 +157,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.refreshing = false
 		if message.err != nil {
 			devLog("refresh.failed", "error", message.err.Error())
+			model.statusKnown = false
 			model.notice = "Process state is unavailable. Press l to retry."
 			model.diagnostic = message.err.Error()
 			return model, nil
@@ -147,7 +166,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.statusKnown = true
 		model.appendEvents(message.tail.Events)
 		model.truncated = model.truncated || message.tail.Truncated
-		if model.notice == "Process state is unavailable. Press l to retry." {
+		if model.registry != registryUnavailable && model.notice == "Process state is unavailable. Press l to retry." {
 			model.notice = ""
 			model.diagnostic = ""
 		}
@@ -176,7 +195,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return model, nil
 	case tickMsg:
 		commands := []tea.Cmd{tickCmd()}
-		if len(model.items) > 0 && !model.refreshing && !model.pending {
+		if len(model.items) > 0 && !model.loading && model.registry != registryUnavailable && !model.refreshing && !model.pending {
 			model.refreshing = true
 			commands = append(commands, model.refreshCmd())
 		}
@@ -193,17 +212,19 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 		model.showHelp = !model.showHelp
 		return model, nil
 	case "d":
-		model.showDetail = !model.showDetail
+		if len(model.items) > 0 || model.diagnostic != "" {
+			model.showDetail = !model.showDetail
+		}
 		return model, nil
 	case "up", "k":
-		if !model.pending && model.selected > 0 {
+		if !model.pending && !model.loading && model.registry != registryUnavailable && model.selected > 0 {
 			model.selected--
 			model.resetSelection()
 			model.refreshing = true
 			return model, model.refreshCmd()
 		}
 	case "down", "j":
-		if !model.pending && model.selected+1 < len(model.items) {
+		if !model.pending && !model.loading && model.registry != registryUnavailable && model.selected+1 < len(model.items) {
 			model.selected++
 			model.resetSelection()
 			model.refreshing = true
@@ -216,8 +237,11 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 		model.scroll = max(0, model.scroll-model.pageHeight())
 		return model, nil
 	case "l":
-		if !model.pending {
+		if !model.pending && !model.loading {
 			model.loading = true
+			model.registry = registryLoading
+			model.generation++
+			model.refreshing = false
 			return model, model.loadRegistryCmd()
 		}
 	case "s":
@@ -238,7 +262,7 @@ func devLogKey(key string) {
 }
 
 func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
-	if model.pending || len(model.items) == 0 {
+	if model.pending || model.loading || model.registry == registryUnavailable || len(model.items) == 0 {
 		return model, nil
 	}
 	if !model.statusKnown {

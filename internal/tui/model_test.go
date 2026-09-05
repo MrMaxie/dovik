@@ -230,14 +230,14 @@ func TestPresentationUsesWideAndCompactWorkspaces(t *testing.T) {
 	model.width, model.height = 120, 34
 	wide := model.View().Content
 	wideHeader := strings.Split(wide, "\n")[1]
-	if lipgloss.Width(wide) != 120 || lipgloss.Height(wide) != 34 || strings.Count(wideHeader, "┌") != 2 || !strings.Contains(wide, "dovik / api") {
+	if lipgloss.Width(wide) != 120 || lipgloss.Height(wide) != 34 || strings.Count(wideHeader, "│") != 1 || !strings.Contains(wide, "dovik / api") {
 		t.Fatalf("wide workspace dimensions = %dx%d:\n%s", lipgloss.Width(wide), lipgloss.Height(wide), wide)
 	}
 
 	model.width, model.height = 80, 24
 	compact := model.View().Content
 	compactLines := strings.Split(compact, "\n")
-	if lipgloss.Width(compact) != 80 || lipgloss.Height(compact) != 24 || strings.Count(compactLines[1], "┌") != 1 || !strings.Contains(compact, "Command  go run ./cmd/api --dev") {
+	if lipgloss.Width(compact) != 80 || lipgloss.Height(compact) != 24 || strings.Contains(compactLines[1], "┌") || !strings.Contains(compact, "Command  go run ./cmd/api --dev") {
 		t.Fatalf("compact workspace dimensions = %dx%d:\n%s", lipgloss.Width(compact), lipgloss.Height(compact), compact)
 	}
 }
@@ -297,7 +297,7 @@ func TestPresentationKeepsRuntimeDiagnosticsBehindDetails(t *testing.T) {
 	}
 	model.showDetail = true
 	view := model.View().Content
-	if !strings.Contains(view, "RUNTIME DETAILS") || !strings.Contains(view, "PID  4242") || !strings.Contains(view, "Instance  instance") {
+	if !strings.Contains(view, "Runtime details") || !strings.Contains(view, "PID  4242") || !strings.Contains(view, "Instance  instance") {
 		t.Fatalf("details view omitted runtime diagnostics:\n%s", view)
 	}
 }

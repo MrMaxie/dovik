@@ -2,7 +2,7 @@
 
 The terminal workspace gives empty panels more visual weight than the user's next action. With no registered processes, it shows selection and output regions that have no subject. A registry connection failure can also render as an empty registry because the empty summary returns before rendering the failure notice.
 
-The user approved this direction on 2026-09-05. This proposal records planned work; implementation and acceptance remain outstanding.
+The user approved this direction on 2026-09-05. Implementation and verification are complete as of 2026-09-05; archival remains outstanding.
 
 # What changes
 
