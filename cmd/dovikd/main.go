@@ -27,7 +27,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	store := supervision.NewFileRegistry(registryPath)
+	endpoint, err := control.DefaultEndpoint()
+	if err != nil {
+		return err
+	}
+	configuration, err := applyDaemonOverrides(daemonConfiguration{endpoint: endpoint, registryPath: registryPath})
+	if err != nil {
+		return err
+	}
+	store := supervision.NewFileRegistry(configuration.registryPath)
 	registry, err := store.LoadAndReconcile(time.Now().UTC())
 	if err != nil {
 		return err
@@ -36,11 +44,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	endpoint, err := control.DefaultEndpoint()
-	if err != nil {
-		return err
-	}
-	listener, err := control.ListenLocal(endpoint)
+	listener, err := control.ListenLocal(configuration.endpoint)
 	if err != nil {
 		return err
 	}

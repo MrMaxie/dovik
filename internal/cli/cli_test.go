@@ -135,6 +135,20 @@ func TestCLITUIRejectsRedirectedStreams(t *testing.T) {
 	}
 }
 
+func TestProductionTUIDaemonLauncherRequiresNativeWindowsDefaultEndpoint(t *testing.T) {
+	launcher, err := productionTUIDaemonLauncher("custom", "default")
+	if err != nil || launcher != nil {
+		t.Fatalf("custom endpoint launcher = %T, err = %v, want nil", launcher, err)
+	}
+	launcher, err = productionTUIDaemonLauncher("default", "default")
+	if err != nil {
+		t.Fatalf("default endpoint launcher error = %v", err)
+	}
+	if runtime.GOOS != "windows" && launcher != nil {
+		t.Fatalf("non-Windows launcher = %T, want nil", launcher)
+	}
+}
+
 func runCLI(t *testing.T, ctx context.Context, endpoint string, arguments ...string) string {
 	t.Helper()
 	var stdout bytes.Buffer

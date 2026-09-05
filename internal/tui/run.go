@@ -14,6 +14,12 @@ import (
 
 // Run starts the interactive terminal client.
 func Run(ctx context.Context, client operatorclient.Client, input io.Reader, output io.Writer) error {
+	return RunWithDaemonLauncher(ctx, client, nil, input, output)
+}
+
+// RunWithDaemonLauncher starts the interactive terminal client with an optional
+// native launcher for an unavailable daemon.
+func RunWithDaemonLauncher(ctx context.Context, client operatorclient.Client, launcher DaemonLauncher, input io.Reader, output io.Writer) error {
 	defer closeDevLog()
 	devLog("run.started")
 	inputFile, inputOK := input.(*os.File)
@@ -23,7 +29,7 @@ func Run(ctx context.Context, client operatorclient.Client, input io.Reader, out
 		return errors.New("tui requires an interactive terminal; use CLI commands when input or output is redirected")
 	}
 	program := tea.NewProgram(
-		NewModel(ctx, client),
+		NewModelWithDaemonLauncher(ctx, client, launcher),
 		tea.WithContext(ctx),
 		tea.WithInput(input),
 		tea.WithOutput(output),

@@ -87,18 +87,20 @@ Process definitions returned by list commands do not contain environment overrid
 
 ## TUI
 
-Start the daemon, then open the interactive terminal client in another terminal:
+Build the colocated development binaries and open the interactive terminal client:
 
 ```console
 just tui
 ```
+
+On native Windows, if the default local daemon is unavailable, press `s` to start it explicitly. The daemon starts as an independent background process and remains available after the TUI exits. Opening the TUI never starts it automatically. A TUI using a custom endpoint, including the Linux container path, remains connection-only and offers `l` to retry after its daemon is started separately.
 
 The TUI navigates existing project and process definitions, displays current or most recent runtime state and bounded output, and sends start, stop, and restart operations through the same local daemon protocol as the CLI. Use CLI commands to add or remove definitions.
 
 Key bindings:
 
 - `Up`/`k`, `Down`/`j`: select a process.
-- `s`: start the selected inactive process.
+- `s`: start the selected inactive process, or start the unavailable default Windows daemon when no process data is available.
 - `x`: stop the selected active process.
 - `r`: restart the selected active process.
 - `l`: reload definitions and process state.

@@ -19,9 +19,14 @@ const port = Number.parseInt(process.env.DOVIK_TUI_HARNESS_PORT ?? "7331", 10);
 const origin = `http://${host}:${port}`;
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "dovik-tui-harness-"));
 const executable = join(temporaryDirectory, process.platform === "win32" ? "dovik.exe" : "dovik");
+const daemonExecutable = join(temporaryDirectory, process.platform === "win32" ? "dovikd.exe" : "dovikd");
 const logEndpoint = process.platform === "win32"
   ? `\\\\.\\pipe\\dovik-tui-harness-${process.pid}`
   : join(temporaryDirectory, "diagnostics.sock");
+const controlEndpoint = process.platform === "win32"
+  ? `\\\\.\\pipe\\dovik-tui-harness-control-${process.pid}`
+  : join(temporaryDirectory, "control.sock");
+const registryPath = join(temporaryDirectory, "registry.json");
 
 process.on("exit", () => {
   try {
@@ -35,23 +40,26 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("DOVIK_TUI_HARNESS_PORT must be a valid TCP port");
 }
 
-const build = spawnSync(
-  "go",
-  ["build", "-tags", "dovik_dev_harness", "-o", executable, "./cmd/dovik"],
-  { cwd: projectRoot, env: process.env, stdio: "inherit", shell: false },
-);
-if (build.error) {
-  await rm(temporaryDirectory, { recursive: true, force: true });
-  throw build.error;
-}
-if (build.status !== 0) {
-  await rm(temporaryDirectory, { recursive: true, force: true });
-  process.exit(build.status ?? 1);
+for (const [output, target] of [[executable, "./cmd/dovik"], [daemonExecutable, "./cmd/dovikd"]]) {
+  const build = spawnSync(
+    "go",
+    ["build", "-tags", "dovik_dev_harness", "-o", output, target],
+    { cwd: projectRoot, env: process.env, stdio: "inherit", shell: false },
+  );
+  if (build.error) {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+    throw build.error;
+  }
+  if (build.status !== 0) {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+    process.exit(build.status ?? 1);
+  }
 }
 
 const sockets = new Set();
 const sessions = new Map();
 const logHistory = [];
+const fixtureDaemonPids = new Set();
 const maxLogEntries = 500;
 let shuttingDown = false;
 
@@ -76,6 +84,9 @@ function appendLog(entry) {
     fields: entry.fields ?? {},
   };
   logHistory.push(normalized);
+  if (normalized.event === "daemon.launch.started" && Number.isInteger(normalized.fields.pid)) {
+    fixtureDaemonPids.add(normalized.fields.pid);
+  }
   if (logHistory.length > maxLogEntries) {
     logHistory.splice(0, logHistory.length - maxLogEntries);
   }
@@ -127,8 +138,12 @@ class TerminalSession {
     }
     cols = Number.isInteger(cols) && cols >= 2 && cols <= 1000 ? cols : 100;
     rows = Number.isInteger(rows) && rows >= 1 && rows <= 500 ? rows : 30;
-    const environment = createTerminalEnvironment(process.env, logEndpoint);
-    const terminalProcess = pty.spawn(executable, ["tui"], {
+    const environment = createTerminalEnvironment(process.env, logEndpoint, {
+      DOVIK_TUI_HARNESS_DAEMON_EXECUTABLE: daemonExecutable,
+      DOVIK_TUI_HARNESS_CONTROL_ENDPOINT: controlEndpoint,
+      DOVIK_TUI_HARNESS_REGISTRY_PATH: registryPath,
+    });
+    const terminalProcess = pty.spawn(executable, ["--endpoint", controlEndpoint, "tui"], {
       name: "xterm-256color",
       cols,
       rows,
@@ -339,6 +354,8 @@ async function shutdown(signal) {
     socket.close(1001, "Harness stopping");
   }
   await Promise.all(activeSessions.map((session) => session.stop("server shutdown")));
+  await Promise.all([...fixtureDaemonPids].map((pid) => terminateProcessTree(pid)));
+  fixtureDaemonPids.clear();
   await Promise.all([
     new Promise((done) => webSocketServer.close(done)),
     new Promise((done) => httpServer.close(done)),

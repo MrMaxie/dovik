@@ -1,5 +1,8 @@
 set dotenv-load := false
 
+dev-client := if os_family() == "windows" { "build/dev/dovik.exe" } else { "build/dev/dovik" }
+dev-daemon := if os_family() == "windows" { "build/dev/dovikd.exe" } else { "build/dev/dovikd" }
+
 default:
     @just --list
 
@@ -23,7 +26,9 @@ run-cli *args:
     mise exec -- go run ./cmd/dovik {{args}}
 
 tui:
-    mise exec -- go run ./cmd/dovik tui
+    mise exec -- go build -o {{dev-daemon}} ./cmd/dovikd
+    mise exec -- go build -o {{dev-client}} ./cmd/dovik
+    mise exec -- ./{{dev-client}} tui
 
 tui-web:
     mise exec -- npm --prefix devtools/tui-harness install --no-audit --no-fund

@@ -61,6 +61,16 @@ type actionMsg struct {
 
 type tickMsg time.Time
 
+type daemonLaunchMsg struct {
+	items []processItem
+	err   error
+}
+
+// DaemonLauncher starts a daemon without owning its lifetime.
+type DaemonLauncher interface {
+	Start() (int, error)
+}
+
 type registryOutcome uint8
 
 const (
@@ -72,34 +82,52 @@ const (
 
 // Model is the terminal-independent TUI state machine.
 type Model struct {
-	ctx          context.Context
-	client       operatorclient.Client
-	items        []processItem
-	selected     int
-	generation   uint64
-	width        int
-	height       int
-	loading      bool
-	registry     registryOutcome
-	refreshing   bool
-	pending      bool
-	runtime      supervision.ProcessRuntime
-	hasRuntime   bool
-	statusKnown  bool
-	events       []supervision.OutputEvent
-	truncated    bool
-	lastSeq      uint64
-	scroll       int
-	showHelp     bool
-	showDetail   bool
-	notice       string
-	diagnostic   string
-	presentation presentation
+	ctx                context.Context
+	client             operatorclient.Client
+	daemonLauncher     DaemonLauncher
+	daemonStarting     bool
+	daemonReadyTimeout time.Duration
+	daemonRetryDelay   time.Duration
+	items              []processItem
+	selected           int
+	generation         uint64
+	width              int
+	height             int
+	loading            bool
+	registry           registryOutcome
+	refreshing         bool
+	pending            bool
+	runtime            supervision.ProcessRuntime
+	hasRuntime         bool
+	statusKnown        bool
+	events             []supervision.OutputEvent
+	truncated          bool
+	lastSeq            uint64
+	scroll             int
+	showHelp           bool
+	showDetail         bool
+	notice             string
+	diagnostic         string
+	presentation       presentation
 }
 
 // NewModel creates a model backed exclusively by the shared daemon client.
 func NewModel(ctx context.Context, client operatorclient.Client) Model {
-	return Model{ctx: ctx, client: client, loading: true, presentation: newPresentation(colorEnabledFromEnvironment())}
+	return NewModelWithDaemonLauncher(ctx, client, nil)
+}
+
+// NewModelWithDaemonLauncher creates a model that can explicitly start an
+// unavailable local daemon.
+func NewModelWithDaemonLauncher(ctx context.Context, client operatorclient.Client, launcher DaemonLauncher) Model {
+	return Model{
+		ctx:                ctx,
+		client:             client,
+		daemonLauncher:     launcher,
+		daemonReadyTimeout: requestTimeout,
+		daemonRetryDelay:   100 * time.Millisecond,
+		loading:            true,
+		presentation:       newPresentation(colorEnabledFromEnvironment()),
+	}
 }
 
 func (model Model) Init() tea.Cmd {
@@ -118,37 +146,19 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		devLogKey(message.String())
 		return model.updateKey(message.String())
 	case registryLoadedMsg:
-		model.loading = false
+		return model.applyRegistryLoaded(message)
+	case daemonLaunchMsg:
+		model.daemonStarting = false
 		if message.err != nil {
+			devLog("daemon.launch.failed", "error", message.err.Error())
 			model.registry = registryUnavailable
-			devLog("registry.failed", "error", message.err.Error())
 			model.statusKnown = false
-			model.notice = "Process state is unavailable. Press l to retry."
+			model.notice = "Daemon did not start or become available. Press s to retry."
 			model.diagnostic = message.err.Error()
 			return model, nil
 		}
-		previous := model.selectedKey()
-		model.items = message.items
-		model.registry = registryPopulated
-		if len(model.items) == 0 {
-			model.registry = registryEmpty
-			model.showDetail = false
-		}
-		model.selected = indexOfKey(model.items, previous)
-		if model.selected < 0 && len(model.items) > 0 {
-			model.selected = 0
-		}
-		if model.selectedKey() != previous || len(model.items) == 0 {
-			model.resetSelection()
-		}
-		model.notice = ""
-		model.diagnostic = ""
-		devLog("registry.loaded", "processes", len(model.items))
-		if len(model.items) == 0 {
-			return model, nil
-		}
-		model.refreshing = true
-		return model, model.refreshCmd()
+		devLog("daemon.launch.ready")
+		return model.applyRegistryLoaded(registryLoadedMsg{items: message.items})
 	case refreshMsg:
 		if message.key != model.selectedKey() || message.generation != model.generation {
 			devLog("refresh.ignored", "reason", "stale selection")
@@ -195,7 +205,7 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return model, nil
 	case tickMsg:
 		commands := []tea.Cmd{tickCmd()}
-		if len(model.items) > 0 && !model.loading && model.registry != registryUnavailable && !model.refreshing && !model.pending {
+		if len(model.items) > 0 && !model.loading && !model.daemonStarting && model.registry != registryUnavailable && !model.refreshing && !model.pending {
 			model.refreshing = true
 			commands = append(commands, model.refreshCmd())
 		}
@@ -237,7 +247,7 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 		model.scroll = max(0, model.scroll-model.pageHeight())
 		return model, nil
 	case "l":
-		if !model.pending && !model.loading {
+		if !model.pending && !model.loading && !model.daemonStarting {
 			model.loading = true
 			model.registry = registryLoading
 			model.generation++
@@ -245,6 +255,9 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 			return model, model.loadRegistryCmd()
 		}
 	case "s":
+		if model.registry == registryUnavailable {
+			return model.beginDaemonStart()
+		}
 		return model.beginAction("start")
 	case "x":
 		return model.beginAction("stop")
@@ -262,7 +275,7 @@ func devLogKey(key string) {
 }
 
 func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
-	if model.pending || model.loading || model.registry == registryUnavailable || len(model.items) == 0 {
+	if model.pending || model.loading || model.daemonStarting || model.registry == registryUnavailable || len(model.items) == 0 {
 		return model, nil
 	}
 	if !model.statusKnown {
@@ -412,25 +425,67 @@ func (model Model) loadRegistryCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(model.ctx, requestTimeout)
 		defer cancel()
-		projects, err := model.client.ListProjects(ctx)
-		if err != nil {
-			return registryLoadedMsg{err: err}
-		}
-		items := make([]processItem, 0)
-		for _, project := range projects {
-			processes, err := model.client.ListProcesses(ctx, project.ID)
-			if err != nil {
-				return registryLoadedMsg{err: err}
-			}
-			for _, process := range processes {
-				items = append(items, processItem{
-					key:     processKey{projectID: process.ProjectID, processID: process.ID},
-					command: formatCommand(process.Command, process.Arguments),
-				})
-			}
-		}
-		return registryLoadedMsg{items: items}
+		items, err := model.loadRegistry(ctx)
+		return registryLoadedMsg{items: items, err: err}
 	}
+}
+
+func (model Model) loadRegistry(ctx context.Context) ([]processItem, error) {
+	projects, err := model.client.ListProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]processItem, 0)
+	for _, project := range projects {
+		processes, err := model.client.ListProcesses(ctx, project.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, process := range processes {
+			items = append(items, processItem{
+				key:     processKey{projectID: process.ProjectID, processID: process.ID},
+				command: formatCommand(process.Command, process.Arguments),
+			})
+		}
+	}
+	return items, nil
+}
+
+func (model Model) applyRegistryLoaded(message registryLoadedMsg) (tea.Model, tea.Cmd) {
+	model.loading = false
+	if message.err != nil {
+		model.registry = registryUnavailable
+		devLog("registry.failed", "error", message.err.Error())
+		model.statusKnown = false
+		model.notice = ""
+		if model.daemonLauncher == nil {
+			model.notice = "Process state is unavailable. Press l to retry."
+		}
+		model.diagnostic = message.err.Error()
+		return model, nil
+	}
+	previous := model.selectedKey()
+	model.items = message.items
+	model.registry = registryPopulated
+	if len(model.items) == 0 {
+		model.registry = registryEmpty
+		model.showDetail = false
+	}
+	model.selected = indexOfKey(model.items, previous)
+	if model.selected < 0 && len(model.items) > 0 {
+		model.selected = 0
+	}
+	if model.selectedKey() != previous || len(model.items) == 0 {
+		model.resetSelection()
+	}
+	model.notice = ""
+	model.diagnostic = ""
+	devLog("registry.loaded", "processes", len(model.items))
+	if len(model.items) == 0 {
+		return model, nil
+	}
+	model.refreshing = true
+	return model, model.refreshCmd()
 }
 
 func formatCommand(command string, arguments []string) string {

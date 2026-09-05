@@ -39,10 +39,11 @@ func Run(ctx context.Context, arguments []string, stdout io.Writer, stderr io.Wr
 // RunIO executes one command with explicit terminal streams.
 func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	wantsJSON := hasJSONFlag(arguments)
-	endpoint, err := control.DefaultEndpoint()
+	defaultEndpoint, err := control.DefaultEndpoint()
 	if err != nil {
 		return writeFailure(stderr, wantsJSON, &commandError{code: "configuration_error", message: err.Error(), cause: err}, 1)
 	}
+	endpoint := defaultEndpoint
 
 	global := flag.NewFlagSet("dovik", flag.ContinueOnError)
 	if wantsJSON {
@@ -73,7 +74,11 @@ func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.W
 		if len(remaining) != 1 {
 			return writeFailure(stderr, false, invalidArguments(errors.New("tui accepts no arguments")), 2)
 		}
-		if err := tui.Run(ctx, client, stdin, stdout); err != nil {
+		launcher, err := resolveTUIDaemonLauncher(endpoint, defaultEndpoint)
+		if err != nil {
+			return writeFailure(stderr, false, &commandError{code: "configuration_error", message: err.Error(), cause: err}, 1)
+		}
+		if err := tui.RunWithDaemonLauncher(ctx, client, launcher, stdin, stdout); err != nil {
 			return writeFailure(stderr, false, classifyClientError(err), 1)
 		}
 		return 0

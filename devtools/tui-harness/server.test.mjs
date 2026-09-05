@@ -111,6 +111,31 @@ test("runs the real TUI through ConPTY and cleans up its process", { timeout: 45
     () => first.messages.find((message) => message.type === "log" && message.entry.event === "run.started"),
     "separate TUI diagnostics",
   );
+
+  let daemonPid;
+  if (process.platform === "win32") {
+    await waitUntil(
+      () => first.messages.find((message) => message.type === "log" && message.entry.event === "registry.failed"),
+      "isolated registry failure",
+    );
+    first.socket.send(JSON.stringify({ type: "input", data: "s" }));
+    await waitUntil(
+      () => first.messages.find((message) => message.type === "log" && message.entry.event === "input.key" && message.entry.fields.key === "s"),
+      "daemon start input",
+    );
+    const daemonStarted = await waitUntil(
+      () => first.messages.find((message) => message.type === "log" && (message.entry.event === "daemon.launch.started" || message.entry.event === "daemon.launch.failed")),
+      "detached daemon startup result",
+    );
+    assert.equal(daemonStarted.entry.event, "daemon.launch.started", JSON.stringify(daemonStarted.entry));
+    daemonPid = daemonStarted.entry.fields.pid;
+    await waitUntil(
+      () => first.messages.find((message) => message.type === "log" && message.entry.event === "daemon.launch.ready"),
+      "daemon protocol readiness",
+    );
+    assert.equal(processExists(daemonPid), true);
+  }
+
   first.socket.send(JSON.stringify({ type: "binary", data: Buffer.from("?").toString("base64") }));
   await waitUntil(
     () => first.messages.find((message) => message.type === "log" && message.entry.event === "input.key" && message.entry.fields.key === "?"),
@@ -123,14 +148,30 @@ test("runs the real TUI through ConPTY and cleans up its process", { timeout: 45
     "Ctrl+C exit",
   );
   assert.equal(exited.exitCode, 0);
+  if (daemonPid) {
+    assert.equal(processExists(daemonPid), true);
+  }
 
+  const loadedBeforeRestart = first.messages.filter((message) => message.type === "log" && message.entry.event === "registry.loaded").length;
   first.socket.send(JSON.stringify({ type: "restart", cols: 88, rows: 26 }));
   const restarted = await waitUntil(
     () => first.messages.find((message) => message.type === "status" && message.state === "running" && message.pid !== started.pid),
     "process restart",
   );
+  if (daemonPid) {
+    await waitUntil(
+      () => first.messages.filter((message) => message.type === "log" && message.entry.event === "registry.loaded").length > loadedBeforeRestart,
+      "replacement TUI reconnect",
+    );
+    const daemonStarts = first.messages.filter((message) => message.type === "log" && message.entry.event === "daemon.launch.started");
+    assert.equal(daemonStarts.length, 1);
+    assert.equal(processExists(daemonPid), true);
+  }
   first.socket.close();
   await waitUntil(() => !processExists(restarted.pid), "browser disconnect cleanup");
+  if (daemonPid) {
+    assert.equal(processExists(daemonPid), true);
+  }
 
   const second = await connect(url);
   const finalProcess = await waitUntil(
@@ -144,4 +185,7 @@ test("runs the real TUI through ConPTY and cleans up its process", { timeout: 45
   });
   assert.equal(child.exitCode, 0, output);
   assert.equal(processExists(finalProcess.pid), false);
+  if (daemonPid) {
+    await waitUntil(() => !processExists(daemonPid), "fixture daemon cleanup");
+  }
 });

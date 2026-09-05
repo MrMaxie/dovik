@@ -344,7 +344,10 @@ func (p presentation) renderShortcutBar(model Model, width int) string {
 	if len(model.items) > 1 && !model.pending && !model.loading && model.registry != registryUnavailable {
 		shortcuts = append(shortcuts, p.renderKey("j/k", "Select"))
 	}
-	if !model.pending && !model.loading {
+	if !model.pending && !model.loading && !model.daemonStarting {
+		if model.registry == registryUnavailable && model.daemonLauncher != nil {
+			shortcuts = append(shortcuts, p.renderKey("s", "Start daemon"))
+		}
 		label := "Refresh"
 		if model.registry == registryUnavailable || (!model.statusKnown && model.diagnostic != "") {
 			label = "Retry"
@@ -402,7 +405,17 @@ func (p presentation) renderRegistryState(model Model, width, height int) string
 	case registryLoading:
 		lines = append(lines, p.section.Render("Loading processes..."), "", p.muted.Render("Waiting for the daemon."))
 	case registryUnavailable:
-		lines = append(lines, p.section.Render("Process data is unavailable"), "", "Check that the daemon is running, then press l to retry.")
+		lines = append(lines, p.section.Render("Process data is unavailable"), "")
+		switch {
+		case model.daemonStarting:
+			lines = append(lines, p.attention.Render("Starting daemon..."))
+		case model.notice != "":
+			lines = append(lines, p.danger.Render(model.notice))
+		case model.daemonLauncher != nil:
+			lines = append(lines, "Press s to start the daemon, or l to retry the connection.")
+		default:
+			lines = append(lines, "Check that the daemon is running, then press l to retry.")
+		}
 	case registryEmpty:
 		lines = append(lines, p.section.Render("No processes registered"), "", "Register a project and process using the CLI.", "Press ? for setup commands, then l to refresh.")
 	}
@@ -410,7 +423,11 @@ func (p presentation) renderRegistryState(model Model, width, height int) string
 		if model.registry == registryEmpty {
 			lines = p.setupLines()
 		} else {
-			lines = append(lines, "", p.renderKey("l", "Retry when ready"), p.renderKey("?", "Close help"), p.renderKey("q", "Quit"))
+			lines = append(lines, "")
+			if model.daemonLauncher != nil && !model.daemonStarting {
+				lines = append(lines, p.renderKey("s", "Start daemon"))
+			}
+			lines = append(lines, p.renderKey("l", "Retry when ready"), p.renderKey("?", "Close help"), p.renderKey("q", "Quit"))
 		}
 	} else if model.showDetail && model.diagnostic != "" {
 		lines = append(lines, "", p.section.Render("Diagnostic details"), model.diagnostic)

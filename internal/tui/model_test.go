@@ -24,6 +24,16 @@ type fakeClient struct {
 	restarts  int
 }
 
+type fakeDaemonLauncher struct {
+	starts int
+	start  func() (int, error)
+}
+
+func (launcher *fakeDaemonLauncher) Start() (int, error) {
+	launcher.starts++
+	return launcher.start()
+}
+
 func (client *fakeClient) AddProject(context.Context, supervision.ProjectDefinition) (supervision.ProjectDefinition, error) {
 	return supervision.ProjectDefinition{}, errors.New("not used")
 }
@@ -156,6 +166,79 @@ func TestModelSerializesActionsAndKeepsDiagnosticsOnDemand(t *testing.T) {
 	})
 	if !strings.Contains(refreshed.View().Content, "Start did not complete. Press s to retry.") {
 		t.Fatalf("successful polling hid the action failure before a retry:\n%s", refreshed.View().Content)
+	}
+}
+
+func TestModelStartsUnavailableDaemonAndWaitsForProtocolReadiness(t *testing.T) {
+	client := &fakeClient{listErr: errors.New("daemon unavailable")}
+	launcher := &fakeDaemonLauncher{start: func() (int, error) {
+		client.listErr = nil
+		return 4242, nil
+	}}
+	model := NewModelWithDaemonLauncher(context.Background(), client, launcher)
+	model.presentation = newPresentation(false)
+	model.width, model.height = 100, 30
+	unavailable, _ := updateModel(t, model, model.loadRegistryCmd()())
+	if view := unavailable.View().Content; !strings.Contains(view, "Press s to start the daemon") || !strings.Contains(view, "[s] Start daemon") {
+		t.Fatalf("unavailable view omitted daemon start action:\n%s", view)
+	}
+	pending, command := updateModel(t, unavailable, key("s"))
+	stillPending, duplicate := updateModel(t, pending, key("s"))
+	if command == nil || duplicate != nil || !stillPending.daemonStarting || launcher.starts != 0 {
+		t.Fatalf("daemon launch was not serialized: pending=%v starts=%d", stillPending.daemonStarting, launcher.starts)
+	}
+	ready, _ := updateModel(t, stillPending, command())
+	if launcher.starts != 1 || ready.daemonStarting || ready.registry != registryEmpty {
+		t.Fatalf("daemon did not become ready: starts=%d state=%v starting=%v", launcher.starts, ready.registry, ready.daemonStarting)
+	}
+}
+
+func TestModelAcceptsCompatibleDaemonAfterLosingLaunchRace(t *testing.T) {
+	client := &fakeClient{listErr: errors.New("daemon unavailable")}
+	launcher := &fakeDaemonLauncher{start: func() (int, error) {
+		client.listErr = nil
+		return 0, errors.New("endpoint already claimed")
+	}}
+	model := NewModelWithDaemonLauncher(context.Background(), client, launcher)
+	model.loading = false
+	model.registry = registryUnavailable
+	pending, command := updateModel(t, model, key("s"))
+	ready, _ := updateModel(t, pending, command())
+	if ready.registry != registryEmpty || ready.diagnostic != "" || ready.notice != "" {
+		t.Fatalf("compatible concurrent daemon was reported as failure: %#v", ready)
+	}
+}
+
+func TestModelKeepsDaemonLaunchFailureDetailsOnDemand(t *testing.T) {
+	client := &fakeClient{listErr: errors.New("transport detail")}
+	launcher := &fakeDaemonLauncher{start: func() (int, error) { return 0, errors.New("process detail") }}
+	model := NewModelWithDaemonLauncher(context.Background(), client, launcher)
+	model.presentation = newPresentation(false)
+	model.width, model.height = 100, 30
+	model.loading = false
+	model.registry = registryUnavailable
+	model.daemonReadyTimeout = 10 * time.Millisecond
+	model.daemonRetryDelay = time.Millisecond
+	pending, command := updateModel(t, model, key("s"))
+	failed, _ := updateModel(t, pending, command())
+	view := failed.View().Content
+	if !strings.Contains(view, "Daemon did not start or become available") || strings.Contains(view, "process detail") || strings.Contains(view, "transport detail") {
+		t.Fatalf("primary daemon failure was not concise:\n%s", view)
+	}
+	detailed, _ := updateModel(t, failed, key("d"))
+	if detailView := detailed.View().Content; !strings.Contains(detailView, "process detail") || !strings.Contains(detailView, "transport detail") {
+		t.Fatalf("daemon diagnostic details were not available on demand:\n%s", detailView)
+	}
+}
+
+func TestModelKeepsConnectionOnlyUnavailableStateWithoutLauncher(t *testing.T) {
+	model := NewModel(context.Background(), &fakeClient{listErr: errors.New("daemon unavailable")})
+	model.presentation = newPresentation(false)
+	model.width, model.height = 100, 30
+	unavailable, _ := updateModel(t, model, model.loadRegistryCmd()())
+	updated, command := updateModel(t, unavailable, key("s"))
+	if command != nil || updated.daemonStarting || strings.Contains(updated.View().Content, "Start daemon") {
+		t.Fatalf("connection-only TUI offered daemon launch:\n%s", updated.View().Content)
 	}
 }
 
