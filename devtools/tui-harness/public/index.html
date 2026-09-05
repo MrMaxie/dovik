@@ -11,27 +11,26 @@
     <main class="harness">
       <header class="toolbar">
         <div>
-          <p class="eyebrow">DEVELOPMENT HARNESS</p>
-          <h1>Dovik TUI</h1>
+          <h1>TUI preview</h1>
         </div>
         <div class="process-summary" aria-live="polite">
           <span class="status-dot" data-testid="status-dot"></span>
           <span data-testid="process-status">Connecting</span>
-          <span class="pid" data-testid="process-pid"></span>
         </div>
-        <button type="button" data-testid="restart">Restart process</button>
+        <button type="button" class="secondary" data-testid="restart">Restart</button>
+        <button type="button" class="secondary" data-testid="diagnostics-toggle" aria-expanded="false" aria-controls="diagnostics">Diagnostics</button>
       </header>
 
       <section class="terminal-panel" aria-label="Dovik terminal">
         <div id="terminal" data-testid="terminal"></div>
       </section>
 
-      <section class="log-panel" aria-labelledby="log-title">
+      <section id="diagnostics" class="log-panel" aria-labelledby="log-title" hidden>
         <header>
           <div>
-            <p class="eyebrow">LIVE DIAGNOSTICS</p>
-            <h2 id="log-title">Application log</h2>
+            <h2 id="log-title">Diagnostics</h2>
           </div>
+          <span class="pid" data-testid="process-pid"></span>
           <button type="button" class="secondary" data-testid="clear-logs">Clear logs</button>
         </header>
         <div class="log-output" data-testid="log-output" role="log" aria-live="polite"></div>

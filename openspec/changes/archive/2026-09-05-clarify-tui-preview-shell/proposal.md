@@ -2,7 +2,7 @@
 
 The browser harness repeats Dovik branding and presents "Running", a PID, and "Restart process" above the actual terminal. These refer to the TUI child process but can be mistaken for a managed project's lifecycle controls. Persistent diagnostics also compete with the terminal during ordinary visual inspection.
 
-The user approved this direction on 2026-09-05. This proposal records planned work; implementation and acceptance remain outstanding.
+The user approved this direction on 2026-09-05. Implementation and verification are complete as of 2026-09-05; archival remains outstanding.
 
 # What changes
 

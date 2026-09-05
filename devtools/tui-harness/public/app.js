@@ -8,6 +8,8 @@ const pidElement = document.querySelector("[data-testid='process-pid']");
 const restartButton = document.querySelector("[data-testid='restart']");
 const clearLogsButton = document.querySelector("[data-testid='clear-logs']");
 const logOutput = document.querySelector("[data-testid='log-output']");
+const diagnosticsToggle = document.querySelector("[data-testid='diagnostics-toggle']");
+const diagnosticsPanel = document.querySelector("#diagnostics");
 
 const terminal = new Terminal({
   allowProposedApi: false,
@@ -67,11 +69,11 @@ function setStatus(state, pid, exitCode) {
   statusDot.dataset.state = state;
   if (state === "running") {
     statusElement.textContent = "Running";
-    pidElement.textContent = `PID ${pid}`;
+    pidElement.textContent = `TUI PID ${pid}`;
     restartButton.disabled = false;
   } else if (state === "exited") {
     statusElement.textContent = `Exited (${exitCode ?? "unknown"})`;
-    pidElement.textContent = pid ? `PID ${pid}` : "";
+    pidElement.textContent = pid ? `TUI PID ${pid}` : "";
     restartButton.disabled = false;
   } else {
     statusElement.textContent = state;
@@ -152,5 +154,15 @@ restartButton.addEventListener("click", () => {
 });
 
 clearLogsButton.addEventListener("click", () => send({ type: "clearLogs" }));
+diagnosticsToggle.addEventListener("click", () => {
+  const expanded = diagnosticsToggle.getAttribute("aria-expanded") !== "true";
+  diagnosticsToggle.setAttribute("aria-expanded", String(expanded));
+  diagnosticsPanel.hidden = !expanded;
+  document.querySelector(".harness").classList.toggle("diagnostics-open", expanded);
+  requestAnimationFrame(() => {
+    fitTerminal();
+    logOutput.scrollTop = logOutput.scrollHeight;
+  });
+});
 terminalElement.addEventListener("click", () => terminal.focus());
 window.addEventListener("beforeunload", () => socket.close());

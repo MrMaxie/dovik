@@ -47,9 +47,13 @@ button.secondary {
   color: #c9ced8;
 }
 
+button.secondary:hover:not(:disabled) {
+  background: #202630;
+}
+
 .harness {
   display: grid;
-  grid-template-rows: 64px minmax(260px, 1fr) 220px;
+  grid-template-rows: 48px minmax(0, 1fr);
   width: 100%;
   height: 100%;
   background: #0b0d11;
@@ -86,7 +90,7 @@ h2 {
 }
 
 h1 {
-  font-size: 18px;
+  font-size: 14px;
 }
 
 h2 {
@@ -172,8 +176,14 @@ h2 {
   color: #ef8080;
 }
 
-@media (max-height: 650px) {
-  .harness {
-    grid-template-rows: 58px minmax(230px, 1fr) 170px;
-  }
+.harness.diagnostics-open {
+  grid-template-rows: 48px minmax(0, 1fr) min(220px, 30vh);
+}
+
+.log-panel[hidden] { display: none; }
+
+@media (max-width: 600px) {
+  .toolbar { gap: 8px; padding: 0 10px; }
+  button { padding: 0 8px; }
+  .status-dot { display: none; }
 }
