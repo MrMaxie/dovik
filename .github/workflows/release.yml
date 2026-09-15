@@ -196,7 +196,9 @@ jobs:
     steps:
       - name: Install Scoop
         shell: pwsh
-        run: Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+        run: |
+          Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+          "$env:USERPROFILE\scoop\shims" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Download release manifest
         shell: pwsh
         run: Invoke-WebRequest -Uri "https://github.com/MrMaxie/dovik/releases/download/v${{ needs.source.outputs.version }}/dovik.json" -OutFile "$env:RUNNER_TEMP/dovik.json"
