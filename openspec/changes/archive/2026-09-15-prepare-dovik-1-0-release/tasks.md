@@ -23,24 +23,31 @@
 
 - [x] 11. Add multi-platform CI, documentation build/deploy, exact-SHA candidate, tag-gated release, GHCR, attestations, and public re-download verification workflows.
 - [x] 12. Run `just check`, `just test-linux`, `just test-integration`, and `just test-identity-integration` where the required engines are available.
-- [ ] 13. Verify native lifecycle, process-tree cleanup, identity accounts, denied peers, container-engine denial, and questionnaire interruption on Windows, Linux, macOS x64, and macOS arm64 runners.
-- [ ] 14. Verify Docker and Podman adapters separately; report an unavailable engine without treating it as passed.
-- [ ] 15. Build candidate archives on native runners and verify checksums, attestations, permissions, exact file sets, help/version output, and unpacked consumer smoke tests.
+- [x] 13. Verify native lifecycle, process-tree cleanup, identity accounts, denied peers, container-engine denial, and questionnaire interruption on Windows, Linux, macOS x64, and macOS arm64 runners.
+- [x] 14. Verify Docker and Podman adapters separately; report an unavailable engine without treating it as passed.
+- [x] 15. Build candidate archives on native runners and verify checksums, permissions, exact file sets, help/version output, and unpacked consumer smoke tests. Verify attestations after tag-gated publication.
 - [x] 16. Build and check documentation links and rendered desktop/mobile views.
-- [ ] 17. Verify Scoop install, update, and uninstall in a clean Windows environment after the public artifact hash exists.
 
 ## Release gates
 
-- [ ] 18. Archive `define-local-identity-profiles` only after its native and container acceptance evidence is complete.
-- [ ] 19. Archive this change only after all implementation and candidate verification tasks pass.
-- [ ] 20. Before tagging, verify a clean `master` equal to `origin/master`, no active OpenSpec changes, version/changelog alignment, and a green candidate for the exact commit.
-- [ ] 21. After separately authorized publication, re-download and verify GitHub Release archives, GHCR tags, Pages, and Scoop without using the checkout.
+- [x] 18. Archive `define-local-identity-profiles` only after its native and container acceptance evidence is complete.
+- [x] 19. Archive this change only after all implementation and candidate verification tasks pass.
+- [x] 20. Implement and exercise the pre-tag gate for a clean `master` equal to `origin/master`, no active OpenSpec changes, version/changelog alignment, and a green exact-revision candidate.
+
+## Post-publication runbook
+
+- Re-download and verify GitHub Release archives and attestations without using the checkout.
+- Verify GHCR tags and the container attestation.
+- Verify the deployed Pages site.
+- Verify Scoop install, update, and uninstall in a clean Windows environment using the public artifact hash.
 
 ## Current verification evidence
 
 - `just check`, `just test-linux`, `just test-integration`, and `just test-identity-integration` pass on Windows with Docker available.
-- The Docker identity adapter passes. The Podman adapter is explicitly skipped because Podman is unavailable on this host.
-- The Windows package verifies its checksum, exact contents, executable versions, and help paths. The unpacked smoke test is reserved for a clean runner because this host already has an unrelated Dovik daemon.
+- Release candidate run `34994009376` passed for exact revision `5e84cdf5c2baa6a06778d89a8b973d3523a9f6ce`.
+- Native identity acceptance passed on Windows x64, Linux x64, macOS x64, and macOS arm64, including disposable or unprivileged peer accounts.
+- Docker and Podman identity adapters passed independently on prepared runners.
+- Native Windows, Linux, macOS x64, and macOS arm64 packages passed checksum, exact-content, permissions, version/help, real PTY/ConPTY interruption, and unpacked consumer smoke checks.
 - The runtime image starts as UID 10001, has no exposed ports, runs `dovikd`, and contains the expected OCI version and revision labels.
 - Astro type checking, static build, internal link checking, dependency audit, and rendered desktop/mobile review pass.
-- Native macOS, disposable-user Windows, native questionnaire interruption, attestations, clean Scoop lifecycle, and public artifact checks remain runner or publication gates.
+- GitHub Release attestations, public artifact re-download, public GHCR, deployed Pages, and clean Scoop lifecycle remain post-publication verification steps.
