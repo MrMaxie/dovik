@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/MrMaxie/dovik/internal/identity"
 	"github.com/MrMaxie/dovik/internal/operatorclient"
 	"github.com/MrMaxie/dovik/internal/supervision"
 )
@@ -82,6 +83,13 @@ const (
 
 // Model is the terminal-independent TUI state machine.
 type Model struct {
+	identities         identity.Snapshot
+	identityError      string
+	identityLoading    bool
+	identitySelected   int
+	showIdentity       bool
+	configureRequested bool
+	configureRoot      string
 	ctx                context.Context
 	client             operatorclient.Client
 	daemonLauncher     DaemonLauncher
@@ -137,6 +145,14 @@ func (model Model) Init() tea.Cmd {
 
 func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case identityLoadedMsg:
+		model.identityLoading = false
+		model.identities = message.snapshot
+		model.identityError = ""
+		if message.err != nil {
+			model.identityError = message.err.Error()
+		}
+		return model, nil
 	case tea.WindowSizeMsg:
 		model.width = message.Width
 		model.height = message.Height
@@ -215,7 +231,41 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
+	if model.showIdentity {
+		switch key {
+		case "esc":
+			model.showIdentity = false
+			return model, nil
+		case "j", "down":
+			model.identitySelected = min(model.identitySelected+1, max(0, len(model.identities.State.Projects)-1))
+			return model, nil
+		case "k", "up":
+			model.identitySelected = max(0, model.identitySelected-1)
+			return model, nil
+		case "c":
+			if model.identityLoading || model.identityError != "" {
+				return model, nil
+			}
+			if model.pending || model.daemonStarting || model.registry == registryUnavailable {
+				return model, nil
+			}
+			model.configureRoot = "."
+			if len(model.identities.State.Projects) > 0 {
+				model.configureRoot = model.identities.State.Projects[min(model.identitySelected, len(model.identities.State.Projects)-1)].Root
+			}
+			model.configureRequested = true
+			return model, tea.Quit
+		default:
+			if key != "i" && key != "q" && key != "ctrl+c" {
+				return model, nil
+			}
+		}
+	}
 	switch key {
+	case "i":
+		model.identityLoading = true
+		model.showIdentity = true
+		return model, model.loadIdentityCmd()
 	case "q", "ctrl+c":
 		return model, tea.Quit
 	case "?":
@@ -269,7 +319,7 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 
 func devLogKey(key string) {
 	switch key {
-	case "q", "ctrl+c", "?", "d", "up", "k", "down", "j", "pgup", "pgdown", "l", "s", "x", "r":
+	case "q", "ctrl+c", "esc", "?", "d", "i", "c", "up", "k", "down", "j", "pgup", "pgdown", "l", "s", "x", "r":
 		devLog("input.key", "key", key)
 	}
 }
@@ -296,6 +346,15 @@ func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
 }
 
 func (model Model) View() tea.View {
+	if model.showIdentity && model.width >= minimumWidth && model.height >= minimumHeight {
+		view := tea.NewView(model.identityView())
+		view.AltScreen = true
+		if model.presentation.colorEnabled {
+			view.BackgroundColor = lipgloss.Color(model.presentation.canvasColor)
+			view.ForegroundColor = lipgloss.Color(model.presentation.primaryColor)
+		}
+		return view
+	}
 	content := model.render()
 	view := tea.NewView(content)
 	view.AltScreen = true

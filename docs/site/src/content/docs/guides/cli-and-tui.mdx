@@ -1,0 +1,41 @@
+---
+title: CLI and TUI
+description: Choose deterministic commands for automation or the interactive terminal workspace for repeated operation.
+---
+
+## CLI
+
+Place global flags before the command name. `--json` writes one JSON document on success and one structured error to standard error on failure.
+
+```console
+dovik --json project list
+dovik --json process list --project storefront
+dovik --json process status --project storefront --process web
+```
+
+Run `dovik <command> --help` without a daemon to inspect each command surface.
+
+## TUI
+
+Open the interactive workspace with `dovik tui`. It shows registered processes, current or latest runtime state, and bounded output from the selected process.
+
+Common keys:
+
+| Key | Action |
+| --- | --- |
+| `Up`/`k`, `Down`/`j` | Select a process |
+| `s` | Start an inactive process |
+| `x` | Stop an active process |
+| `r` | Restart an active process |
+| `l` | Reload registry and runtime state |
+| `i` | Open project identity |
+| `Page Up`, `Page Down` | Scroll output |
+| `d` | Toggle runtime details |
+| `?` | Toggle expanded help |
+| `q`, `Ctrl+C` | Quit the client |
+
+On native Windows, the TUI can explicitly start a colocated daemon at the default endpoint when it is offline. Opening the TUI never starts a daemon automatically. Custom endpoints and Unix environments remain connection-only.
+
+The identity workspace shows the selected project's repository, persona, Git author, protection mode, sessions, and the count of enabled repository operations out of eight. Persona switching is shown separately. Press `c` there to open the configuration questionnaire for the selected project.
+
+The TUI requires interactive input and output. Use the CLI or MCP when streams are redirected.

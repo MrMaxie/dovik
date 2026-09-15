@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MrMaxie/dovik/internal/buildinfo"
 	"github.com/MrMaxie/dovik/internal/control"
+	"github.com/MrMaxie/dovik/internal/identity"
 	"github.com/MrMaxie/dovik/internal/mcpoperator"
 	"github.com/MrMaxie/dovik/internal/operatorclient"
 	"github.com/MrMaxie/dovik/internal/supervision"
@@ -39,6 +41,25 @@ func Run(ctx context.Context, arguments []string, stdout io.Writer, stderr io.Wr
 
 // RunIO executes one command with explicit terminal streams.
 func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	if len(arguments) == 1 && arguments[0] == "--version" {
+		fmt.Fprintf(stdout, "dovik %s\n", buildinfo.Version)
+		return 0
+	}
+	if topic, ok := helpTopic(arguments); ok {
+		writeHelp(stdout, topic)
+		return 0
+	}
+	if len(arguments) == 1 && arguments[0] == "agent-idle" {
+		<-ctx.Done()
+		return 0
+	}
+	if len(arguments) == 1 && arguments[0] == "agent-bridge" {
+		if err := identity.RunBridge(ctx, stdin, stdout); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		return 0
+	}
 	wantsJSON := hasJSONFlag(arguments)
 	defaultEndpoint, err := control.DefaultEndpoint()
 	if err != nil {
@@ -68,6 +89,46 @@ func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.W
 	}
 
 	client := control.NewClient(endpoint)
+	if len(remaining) > 1 && remaining[0] == "session" && remaining[1] == "run" {
+		code, err := runContainerSession(ctx, client, remaining[2:], stdin, stdout, stderr, mode)
+		if err != nil {
+			return writeFailure(stderr, mode.json, &commandError{code: "session_error", message: err.Error()}, 1)
+		}
+		return code
+	}
+	if os.Getenv("DOVIK_AGENT_ENDPOINT") != "" && remaining[0] != "gh" && remaining[0] != "session" {
+		return writeFailure(stderr, mode.json, &commandError{code: "permission_denied", message: "use the operator terminal to administer Dovik"}, 1)
+	}
+	if remaining[0] == "gh" {
+		if mode.json {
+			return writeFailure(stderr, true, invalidArguments(fmt.Errorf("place gh output flags after gh --")), 2)
+		}
+		code, err := runGH(ctx, client, remaining[1:], stdin, stdout, stderr)
+		if err != nil {
+			fmt.Fprintf(stderr, "gh: %s\n", err)
+			return code
+		}
+		return code
+	}
+	if remaining[0] == "identity" || remaining[0] == "policy" || remaining[0] == "session" || remaining[0] == "doctor" || (remaining[0] == "project" && len(remaining) > 1 && remaining[1] == "configure") {
+		var err error
+		switch remaining[0] {
+		case "identity":
+			err = runIdentityCommand(ctx, client, remaining, stdin, stdout, stderr, mode)
+		case "policy":
+			err = runPolicyCommand(ctx, client, remaining, stdout, stderr, mode)
+		case "session":
+			err = runSessionCommand(ctx, client, remaining, stdout, stderr, mode)
+		case "doctor":
+			err = runDoctor(ctx, client, remaining[1:], stdout, stderr, mode)
+		case "project":
+			err = runProjectConfigure(ctx, client, remaining[2:], stdin, stdout, stderr, mode)
+		}
+		if err != nil {
+			return writeFailure(stderr, mode.json, &commandError{code: "identity_error", message: err.Error()}, 1)
+		}
+		return 0
+	}
 	if remaining[0] == "mcp" {
 		if mode.json || len(remaining) != 1 {
 			return writeFailure(stderr, mode.json, invalidArguments(errors.New("mcp accepts no arguments and does not support --json")), 2)
@@ -427,9 +488,92 @@ func writeRuntime(writer io.Writer, runtimeState supervision.ProcessRuntime) {
 }
 
 func writeUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "usage: dovik [--endpoint PATH] [--json] project|process COMMAND [OPTIONS]")
-	fmt.Fprintln(writer, "       dovik [--endpoint PATH] tui")
-	fmt.Fprintln(writer, "       dovik [--endpoint PATH] mcp")
+	writeHelp(writer, nil)
+}
+
+func helpTopic(arguments []string) ([]string, bool) {
+	topic := make([]string, 0, 2)
+	for index := 0; index < len(arguments); index++ {
+		argument := arguments[index]
+		if argument == "--" {
+			return nil, false
+		}
+		if argument == "--help" || argument == "-h" {
+			return topic, true
+		}
+		if argument == "--json" || strings.HasPrefix(argument, "--json=") || strings.HasPrefix(argument, "--endpoint=") {
+			continue
+		}
+		if argument == "--endpoint" {
+			index++
+			continue
+		}
+		if !strings.HasPrefix(argument, "-") && len(topic) < 2 {
+			topic = append(topic, argument)
+		}
+	}
+	return nil, false
+}
+
+func writeHelp(writer io.Writer, topic []string) {
+	if len(topic) == 0 {
+		fmt.Fprintln(writer, "Dovik supervises local development processes through one local daemon.")
+		fmt.Fprintln(writer)
+		fmt.Fprintln(writer, "Usage:")
+		fmt.Fprintln(writer, "  dovik [--endpoint PATH] [--json] project|process COMMAND [OPTIONS]")
+		fmt.Fprintln(writer, "  dovik [--endpoint PATH] tui")
+		fmt.Fprintln(writer, "  dovik [--endpoint PATH] mcp")
+		fmt.Fprintln(writer, "  dovik [--endpoint PATH] gh -- GH_ARGUMENTS")
+		fmt.Fprintln(writer, "  dovik [--endpoint PATH] [--json] identity|policy|session|doctor [OPTIONS]")
+		fmt.Fprintln(writer, "  dovik [--endpoint PATH] project configure [--root PATH]")
+		fmt.Fprintln(writer)
+		fmt.Fprintln(writer, "Global options:")
+		fmt.Fprintln(writer, "  --endpoint PATH  Override the local daemon endpoint")
+		fmt.Fprintln(writer, "  --json           Emit one JSON document for non-interactive commands")
+		fmt.Fprintln(writer, "  --help, -h       Show help")
+		fmt.Fprintln(writer, "  --version        Show the Dovik version")
+		return
+	}
+
+	command := strings.Join(topic, " ")
+	switch command {
+	case "project":
+		fmt.Fprintln(writer, "Usage: dovik project add|remove|list|configure [OPTIONS]")
+	case "project add":
+		fmt.Fprintln(writer, "Usage: dovik project add --id ID --root PATH")
+	case "project remove":
+		fmt.Fprintln(writer, "Usage: dovik project remove --id ID")
+	case "project list":
+		fmt.Fprintln(writer, "Usage: dovik project list")
+	case "project configure":
+		fmt.Fprintln(writer, "Usage: dovik project configure [--root PATH]")
+	case "process":
+		fmt.Fprintln(writer, "Usage: dovik process add|remove|list|start|stop|restart|status|logs [OPTIONS]")
+	case "process add":
+		fmt.Fprintln(writer, "Usage: dovik process add --project ID --id ID --command PATH [--arg VALUE] [--env KEY=VALUE]")
+	case "process remove", "process start", "process stop", "process restart", "process status":
+		fmt.Fprintf(writer, "Usage: dovik %s --project ID --process ID\n", command)
+	case "process list":
+		fmt.Fprintln(writer, "Usage: dovik process list --project ID")
+	case "process logs":
+		fmt.Fprintln(writer, "Usage: dovik process logs --project ID --process ID [--tail COUNT]")
+	case "tui":
+		fmt.Fprintln(writer, "Usage: dovik tui")
+	case "mcp":
+		fmt.Fprintln(writer, "Usage: dovik mcp")
+	case "gh":
+		fmt.Fprintln(writer, "Usage: dovik gh -- GH_ARGUMENTS")
+	case "identity":
+		fmt.Fprintln(writer, "Usage: dovik identity COMMAND [OPTIONS]")
+	case "policy":
+		fmt.Fprintln(writer, "Usage: dovik policy COMMAND [OPTIONS]")
+	case "session":
+		fmt.Fprintln(writer, "Usage: dovik session COMMAND [OPTIONS]")
+	case "doctor":
+		fmt.Fprintln(writer, "Usage: dovik doctor [OPTIONS]")
+	default:
+		fmt.Fprintf(writer, "Usage: dovik %s [OPTIONS]\n", command)
+	}
 }
 
 type projectJSON struct {

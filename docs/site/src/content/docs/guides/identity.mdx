@@ -1,0 +1,54 @@
+---
+title: Identity and governed gh
+description: Align Git authors and GitHub accounts per project without changing global GitHub authentication state.
+---
+
+## Configure a project
+
+Run the terminal questionnaire from the project or pass its root explicitly:
+
+```console
+dovik project configure
+dovik project configure --root /absolute/path/to/project
+```
+
+When possible, Dovik derives the project root and GitHub repository from the checkout. The original GitHub CLI path is global daemon configuration: the first setup asks for it, and later projects reuse the same value instead of asking again. The questionnaire proposes saved personas and accounts discovered from the original CLI, then selects a Git author, policy preset, explicit exceptions, and enforcement mode.
+
+Nothing is saved until you confirm the summary. Canceling leaves the identity store unchanged. Omitting a policy grants no permissions.
+
+The TUI exposes the same flow. Press `i` to open the project identity workspace, then `c` to configure the selected project. Identity, policy, sessions, and the questionnaire share the normal Dovik terminal layout and colors.
+
+## Use the governed proxy
+
+Run GitHub operations through:
+
+```console
+dovik gh -- repo view
+dovik gh -- pr list
+```
+
+The optional bundled `gh` executable provides the same proxy when intentionally placed before the original GitHub CLI on `PATH`. Dovik uses the centrally configured original CLI, verifies the project and selected account, and executes a recognized operation without calling `gh auth switch`.
+
+Repositories without configured Dovik identity use the original GitHub CLI unchanged. Running `gh` never opens the identity questionnaire or requires an agent to select a persona. Governance begins only after an operator explicitly configures that repository.
+
+Normal help, empty invocations, output, exit codes, and interactive terminal behavior remain those of the original GitHub CLI. Agents and scripts continue to call ordinary `gh`; they do not need to understand or configure Dovik.
+
+## Repository permissions
+
+Dovik reports eight repository-operation permissions: read, comment, create, edit, close, review, merge, and Actions. Persona switching is a separate permission because it changes identity rather than repository capability.
+
+The presets provide a starting point:
+
+- `read-only` allows repository, issue, pull-request, and Actions reads.
+- `collaborate` adds comments, creation, edits, close or reopen, and reviews.
+- `maintain` enables every supported repository operation, including merge and Actions changes.
+
+Explicit exceptions can allow or deny an individual operation without changing the rest of the preset.
+
+## Enforcement modes
+
+- `proxy-level` is the default. It governs calls made through Dovik but a process with the operator's operating-system privileges can bypass the proxy.
+- Native isolation uses an operator-provisioned, non-administrative account and authenticates the restricted session by operating-system peer identity.
+- Container isolation uses Docker or Podman and a private stdio bridge. The agent receives no control port, operator credential store, or container-engine access.
+
+Isolation fails closed. Dovik never silently falls back to proxy-level enforcement.

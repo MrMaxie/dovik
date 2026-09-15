@@ -10,14 +10,21 @@ import (
 	"net"
 	"sync"
 
+	"github.com/MrMaxie/dovik/internal/identity"
 	"github.com/MrMaxie/dovik/internal/supervision"
 )
 
-const maximumRequestBytes = 1024 * 1024
+const maximumRequestBytes = 2 * 1024 * 1024
 
 // Server exposes one lifecycle manager through the local control protocol.
 type Server struct {
-	manager *supervision.LifecycleManager
+	manager    *supervision.LifecycleManager
+	identities *identity.Service
+}
+
+func (server *Server) WithIdentity(service *identity.Service) *Server {
+	server.identities = service
+	return server
 }
 
 func NewServer(manager *supervision.LifecycleManager) *Server {
@@ -69,6 +76,34 @@ func (server *Server) handleConnection(ctx context.Context, connection io.ReadWr
 		})
 		return
 	}
+	if request.Operation == OperationGHExecute || request.Operation == OperationAgentRun {
+		streamContext, cancel := context.WithCancel(ctx)
+		defer cancel()
+		if socket, ok := connection.(net.Conn); ok {
+			go func() { var extra [1]byte; _, _ = socket.Read(extra[:]); cancel() }()
+		}
+		code := 1
+		if request.Version != ProtocolVersion || request.ID == "" || server.identities == nil {
+			_ = json.NewEncoder(connection).Encode(identity.Frame{ExitCode: &code, Error: "identity execution is unavailable or incompatible"})
+			return
+		}
+		if request.Operation == OperationAgentRun {
+			var input identity.ContainerRequest
+			if err := decodePayload(request.Payload, &input); err != nil {
+				_ = json.NewEncoder(connection).Encode(identity.Frame{ExitCode: &code, Error: "invalid agent session request"})
+				return
+			}
+			server.identities.StreamContainer(streamContext, input, connection)
+			return
+		}
+		var input identity.ExecutionRequest
+		if err := decodePayload(request.Payload, &input); err != nil {
+			_ = json.NewEncoder(connection).Encode(identity.Frame{ExitCode: &code, Error: "invalid execution request"})
+			return
+		}
+		server.identities.Stream(streamContext, input, connection)
+		return
+	}
 	response := server.handleRequest(ctx, request)
 	server.writeResponse(connection, response)
 }
@@ -98,6 +133,15 @@ func (server *Server) handleRequest(ctx context.Context, request Request) Respon
 
 func (server *Server) execute(ctx context.Context, request Request) (any, error) {
 	switch request.Operation {
+	case OperationIdentity:
+		if server.identities == nil {
+			return nil, fmt.Errorf("identity service is unavailable")
+		}
+		var input identity.Request
+		if err := decodePayload(request.Payload, &input); err != nil {
+			return nil, fmt.Errorf("invalid identity request")
+		}
+		return server.identities.Call(ctx, input)
 	case OperationProjectAdd:
 		var input projectInput
 		if err := decodePayload(request.Payload, &input); err != nil {

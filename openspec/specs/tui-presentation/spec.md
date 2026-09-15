@@ -98,7 +98,7 @@ Visual TUI changes SHALL be verified through the development browser harness in 
 #### Scenario: Accept the redesigned workspace
 
 - **WHEN** implementation is ready for review
-- **THEN** a developer or coding agent inspects screenshots of populated, empty, unavailable, pending, failed, compact, minimum-size, and below-minimum states rendered by `just tui-web`
+- **THEN** a developer or coding agent inspects screenshots of populated, empty, unavailable, pending, failed, compact, minimum-size, and below-minimum states rendered through ttyglass
 - **AND** exercises keyboard navigation and browser-driven PTY resize
 - **AND** confirms through live diagnostics that the visible TUI state matches the application state
 

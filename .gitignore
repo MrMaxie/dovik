@@ -1,1 +1,5 @@
 /build/
+/dist/
+/docs/site/.astro/
+/docs/site/dist/
+/docs/site/node_modules/

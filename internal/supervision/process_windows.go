@@ -19,7 +19,7 @@ func startOwnedProcess(command *exec.Cmd) (*ownedProcess, error) {
 		return nil, err
 	}
 	owner := &windowsProcess{job: job}
-	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW}
 	if err := command.Start(); err != nil {
 		owner.Close()
 		return nil, err

@@ -1,0 +1,57 @@
+---
+title: Dovik
+description: Supervise local development processes through one daemon, CLI, TUI, and MCP control plane.
+template: splash
+hero:
+  title: One owner for every local process.
+  tagline: Dovik starts, observes, and stops the development processes registered to your projects. Humans and coding agents share the same daemon-owned status, logs, and lifecycle controls.
+  actions:
+    - text: Start with Dovik
+      link: /dovik/quick-start/getting-started/
+      variant: primary
+    - text: See the daily workflow
+      link: /dovik/guides/daily-workflow/
+      variant: secondary
+---
+
+import DovikTuiPreview from '../../components/DovikTuiPreview.astro';
+
+<section class="dovik-home-section">
+
+<div class="dovik-section-layout">
+  <div>
+    <p class="dovik-kicker">The operator view</p>
+
+## See the process Dovik owns before you act.
+
+`dovik tui` connects each project and process definition to its current runtime and retained output. The preview below faithfully reproduces the current empty state and its operator copy without exposing project names, commands, paths, or account data.
+  </div>
+  <DovikTuiPreview />
+</div>
+
+</section>
+
+<section class="dovik-home-section">
+
+<p class="dovik-kicker">One local authority</p>
+
+## Stop guessing which terminal owns the app.
+
+<div class="dovik-capabilities">
+  <article><h3>Register intent.</h3><p>Projects define the processes Dovik may supervise without exposing environment values to clients.</p></article>
+  <article><h3>Control the whole process tree.</h3><p>Start, stop, and restart through the daemon instead of signaling guessed process IDs.</p></article>
+  <article><h3>Share status and output.</h3><p>CLI, TUI, and MCP clients read the same current runtime and bounded stdout and stderr events.</p></article>
+  <article><h3>Govern project identity.</h3><p>Personas align Git authors and GitHub accounts without changing the globally active `gh` account.</p></article>
+</div>
+
+</section>
+
+<section class="dovik-home-section">
+
+<p class="dovik-kicker">Responsibility boundary</p>
+
+## Dovik supervises processes. It does not route traffic.
+
+Dovik does not provide DNS, HTTPS, reverse proxying, domains, remote execution, scheduling, or container orchestration. Cadder remains an independent future option for endpoint allocation.
+
+</section>

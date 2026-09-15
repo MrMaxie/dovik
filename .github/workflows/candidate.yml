@@ -1,0 +1,152 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Exact full commit SHA from master
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: Verify candidate source
+    runs-on: ubuntu-latest
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ inputs.revision }}
+          fetch-depth: 0
+      - id: source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ inputs.revision }}"
+          git fetch origin master
+          git merge-base --is-ancestor HEAD origin/master
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: jdx/mise-action@v4.2.3
+      - run: just release-source-check
+
+  artifacts:
+    name: Candidate (${{ matrix.target }})
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: windows-x64
+            archive: dovik-v1.0.0-windows-x64.zip
+          - runner: ubuntu-latest
+            target: linux-x64
+            archive: dovik-v1.0.0-linux-x64.tar.gz
+          - runner: macos-15-intel
+            target: macos-x64
+            archive: dovik-v1.0.0-macos-x64.tar.gz
+          - runner: macos-15
+            target: macos-arm64
+            archive: dovik-v1.0.0-macos-arm64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+      - uses: jdx/mise-action@v4.2.3
+      - run: go test -count=1 ./internal/supervision
+      - run: just test-identity-interrupt
+      - run: just package
+      - run: go run ./cmd/releasepack smoke --archive dist/${{ matrix.archive }}
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: candidate-${{ matrix.target }}-${{ needs.source.outputs.revision }}
+          path: |
+            dist/${{ matrix.archive }}
+            dist/${{ matrix.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  containers:
+    name: Candidate container integration
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+      - uses: jdx/mise-action@v4.2.3
+      - run: just test-linux
+      - run: just test-integration
+      - run: just test-identity-integration
+
+  posix-identity:
+    name: Candidate native identity (${{ matrix.target }})
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: linux-x64
+            user: nobody
+          - runner: macos-15-intel
+            target: macos-x64
+            user: _www
+          - runner: macos-15
+            target: macos-arm64
+            user: _www
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+      - uses: jdx/mise-action@v4.2.3
+      - shell: bash
+        run: sudo --preserve-env=PATH env DOVIK_NATIVE_TEST_USER=${{ matrix.user }} go test -count=1 ./internal/identity
+
+  windows-identity:
+    name: Candidate native identity (windows-x64)
+    needs: source
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+      - uses: jdx/mise-action@v4.2.3
+      - name: Create disposable unprivileged account
+        shell: pwsh
+        run: |
+          $password = "Dv!$([guid]::NewGuid().ToString('N'))aA1"
+          Write-Output "::add-mask::$password"
+          net user dovik-ci "$password" /add /passwordchg:no
+          if ($LASTEXITCODE -ne 0) { throw "Could not create disposable account" }
+          "DOVIK_NATIVE_TEST_USERNAME=dovik-ci" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "DOVIK_NATIVE_TEST_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Exercise a separate unprivileged peer
+        run: go test -count=1 ./internal/identity
+      - name: Remove disposable account
+        if: always()
+        shell: pwsh
+        run: net user dovik-ci /delete
+
+  podman:
+    name: Candidate Podman identity integration
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+      - uses: jdx/mise-action@v4.2.3
+      - run: sudo apt-get update && sudo apt-get install --yes podman
+      - run: podman version
+      - run: just test-identity-integration

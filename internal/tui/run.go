@@ -8,6 +8,8 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"github.com/MrMaxie/dovik/internal/identityui"
 	"github.com/MrMaxie/dovik/internal/operatorclient"
 	"github.com/charmbracelet/x/term"
 )
@@ -28,15 +30,25 @@ func RunWithDaemonLauncher(ctx context.Context, client operatorclient.Client, la
 		devLog("run.rejected", "reason", "non-interactive terminal")
 		return errors.New("tui requires an interactive terminal; use CLI commands when input or output is redirected")
 	}
-	program := tea.NewProgram(
-		NewModelWithDaemonLauncher(ctx, client, launcher),
-		tea.WithContext(ctx),
-		tea.WithInput(input),
-		tea.WithOutput(output),
-	)
-	if _, err := program.Run(); err != nil {
-		devLog("run.failed", "error", err.Error())
-		return fmt.Errorf("run terminal interface: %w", err)
+	for {
+		program := tea.NewProgram(
+			NewModelWithDaemonLauncher(ctx, client, launcher),
+			tea.WithContext(ctx),
+			tea.WithInput(input),
+			tea.WithOutput(output),
+		)
+		result, err := program.Run()
+		if err != nil {
+			devLog("run.failed", "error", err.Error())
+			return fmt.Errorf("run terminal interface: %w", err)
+		}
+		model, ok := result.(Model)
+		if !ok || !model.configureRequested {
+			break
+		}
+		if err := identityui.Configure(ctx, client, model.configureRoot, input, output); err != nil && !errors.Is(err, huh.ErrUserAborted) {
+			return err
+		}
 	}
 	devLog("run.completed")
 	return nil

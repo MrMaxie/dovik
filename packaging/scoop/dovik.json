@@ -1,0 +1,32 @@
+{
+  "version": "1.0.0",
+  "description": "Local development process supervisor with CLI, TUI, MCP, and governed project identity.",
+  "homepage": "https://maxie.dev/dovik/",
+  "license": "Apache-2.0",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/MrMaxie/dovik/releases/download/v1.0.0/dovik-v1.0.0-windows-x64.zip",
+      "hash": "RELEASE_SHA256_REQUIRED",
+      "extract_dir": "dovik-v1.0.0-windows-x64"
+    }
+  },
+  "bin": [
+    "dovik.exe",
+    "dovikd.exe"
+  ],
+  "notes": "The optional governed gh proxy remains in the install directory but is not added as a Scoop shim. Configure project identity before activating it.",
+  "checkver": {
+    "github": "https://github.com/MrMaxie/dovik"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/MrMaxie/dovik/releases/download/v$version/dovik-v$version-windows-x64.zip",
+        "hash": {
+          "url": "$url.sha256"
+        },
+        "extract_dir": "dovik-v$version-windows-x64"
+      }
+    }
+  }
+}

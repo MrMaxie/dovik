@@ -1,4 +1,13 @@
-.git
-.local
-*.exe
-.arcantry-*
+**
+!Dockerfile
+!.github/
+!.github/workflows/
+!.github/workflows/**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!integration/
+!integration/**

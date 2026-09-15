@@ -4,12 +4,18 @@ package operatorclient
 
 import (
 	"context"
+	"io"
+
+	"github.com/MrMaxie/dovik/internal/identity"
 
 	"github.com/MrMaxie/dovik/internal/supervision"
 )
 
 // Client is the local control-plane surface used by the CLI, TUI, and MCP adapter.
 type Client interface {
+	Identity(context.Context, identity.Request) (identity.Snapshot, error)
+	ExecuteGH(context.Context, identity.ExecutionRequest, io.Writer, io.Writer) (int, error)
+	RunAgent(context.Context, identity.ContainerRequest, io.Writer, io.Writer) (int, error)
 	AddProject(context.Context, supervision.ProjectDefinition) (supervision.ProjectDefinition, error)
 	RemoveProject(context.Context, supervision.ProjectID) error
 	ListProjects(context.Context) ([]supervision.ProjectDefinition, error)

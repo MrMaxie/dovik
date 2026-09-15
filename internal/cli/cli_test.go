@@ -16,6 +16,32 @@ import (
 	"github.com/MrMaxie/dovik/internal/supervision"
 )
 
+func TestVersionAndHelpDoNotRequireDaemon(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments []string
+		contains  string
+	}{
+		{name: "version", arguments: []string{"--version"}, contains: "dovik 1.0.0"},
+		{name: "root help", arguments: []string{"--help"}, contains: "Usage:"},
+		{name: "command help", arguments: []string{"--endpoint", "relative-is-invalid-for-a-daemon", "process", "--help"}, contains: "dovik process"},
+		{name: "subcommand help", arguments: []string{"process", "start", "--help"}, contains: "process start"},
+		{name: "proxy help", arguments: []string{"gh", "--help"}, contains: "dovik gh --"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			if code := RunIO(context.Background(), test.arguments, strings.NewReader(""), &stdout, &stderr); code != 0 {
+				t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), test.contains) {
+				t.Fatalf("stdout = %q, want substring %q", stdout.String(), test.contains)
+			}
+		})
+	}
+}
+
 const cliHelperEnvironment = "DOVIK_CLI_HELPER"
 
 func TestCLIRegistryAndLifecycleCommands(t *testing.T) {

@@ -1,0 +1,22 @@
+---
+title: Security and privacy
+description: Understand Dovik's local trust boundary, private state, visible output, and explicit exclusions.
+---
+
+## Local control plane
+
+Dovik has no network control port. Native clients connect through a current-user Windows Named Pipe or private Unix Domain Socket. The daemon is the only process that writes registry and runtime state.
+
+## Private state
+
+The registry and identity metadata live in private per-user storage outside project repositories. Writes use a temporary file, flush, and atomic replacement. Credentials are not stored in identity metadata.
+
+Environment override values are accepted only when defining a process and are omitted from list and status responses. Process commands, arguments, working directories, and captured output remain visible to authorized clients and may contain sensitive text produced by the project.
+
+## GitHub credentials
+
+The governed executor obtains credentials only after validating the repository, account, command, flags, and policy. Tokens do not enter process arguments, RPC results, state files, or diagnostics. Dovik never changes the globally active GitHub account.
+
+## Boundaries
+
+Proxy-level enforcement is bypassable by another process running with the operator's privileges. Use a prepared native or container isolation boundary when that risk is unacceptable. Dovik does not install accounts, engines, credentials, or PATH shims automatically.

@@ -1,5 +1,3 @@
-//go:build !dovik_dev_harness
-
 package cli
 
 import "github.com/MrMaxie/dovik/internal/tui"

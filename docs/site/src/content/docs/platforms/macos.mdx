@@ -1,0 +1,13 @@
+---
+title: macOS
+description: Run native Dovik archives on Intel or Apple silicon macOS.
+---
+
+Choose the archive matching the machine:
+
+- Intel: `dovik-v1.0.0-macos-x64.tar.gz`
+- Apple silicon: `dovik-v1.0.0-macos-arm64.tar.gz`
+
+Dovik uses a private Unix Domain Socket and process groups for native lifecycle ownership. Native identity isolation requires a separate unprivileged account with explicit project access and no container-engine access. Extended ACL grants must be reviewed before enabling the session.
+
+The 1.0.0 binaries are not notarized or code-signed. macOS may require an explicit local approval to run them. Verify the SHA-256 checksum and GitHub artifact attestation first.

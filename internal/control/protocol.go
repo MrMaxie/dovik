@@ -13,6 +13,9 @@ const ProtocolVersion = 1
 type Operation string
 
 const (
+	OperationIdentity       Operation = "identity"
+	OperationGHExecute      Operation = "identity.execute"
+	OperationAgentRun       Operation = "identity.agent-run"
 	OperationProjectAdd     Operation = "project.add"
 	OperationProjectRemove  Operation = "project.remove"
 	OperationProjectList    Operation = "project.list"

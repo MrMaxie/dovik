@@ -1,0 +1,57 @@
+name: Docs
+
+on:
+  pull_request:
+    branches: [master]
+    paths: ["docs/**", "mise.toml", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the verified site to GitHub Pages
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dovik-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: jdx/mise-action@v4.2.3
+      - run: just docs-check
+      - if: inputs.deploy
+        uses: actions/configure-pages@v6.0.0
+      - if: inputs.deploy
+        uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: docs/site/dist
+
+  deploy:
+    name: Deploy documentation
+    needs: build
+    if: inputs.deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5.0.0
+      - name: Verify public documentation
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: curl --fail --location --retry 12 --retry-delay 5 "$PAGE_URL" | grep -F "One owner for every local process."

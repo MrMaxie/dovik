@@ -1,0 +1,10 @@
+---
+title: Linux
+description: Run Dovik natively on Linux x64 or inside its non-root container image.
+---
+
+Use `dovik-v1.0.0-linux-x64.tar.gz` for a native daemon and clients. Dovik creates a private Unix Domain Socket under `XDG_RUNTIME_DIR` when set, or a private per-user temporary directory otherwise. It uses a separate process group for each managed runtime.
+
+Native identity isolation requires an operator-provisioned unprivileged user with access to the project and its parent directories. The account must not have write access to Docker or Podman sockets.
+
+For a self-contained container, use `ghcr.io/mrmaxie/dovik:1.0.0`. The image runs as UID 10001, exposes no port, and manages only processes installed and started inside that same container.

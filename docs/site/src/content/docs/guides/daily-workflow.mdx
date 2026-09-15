@@ -1,0 +1,38 @@
+---
+title: Daily workflow
+description: Register processes once, then use Dovik status and logs throughout the day.
+---
+
+## Register definitions once
+
+The daemon registry is the source of process ownership. Add a project, then add each process Dovik may start. Dovik runs the executable directly, without an intermediate shell.
+
+Use repeated `--arg` and `--env` flags for ordered arguments and private environment overrides. List and status responses never return stored environment values.
+
+## Inspect before changing lifecycle
+
+Use `process status` and `process logs` before retrying a failed or timed-out operation. A client timeout does not prove that the daemon rejected the request.
+
+```console
+dovik process status --project storefront --process web
+dovik process logs --project storefront --process web --tail 100
+```
+
+## Start, restart, and stop
+
+```console
+dovik process start --project storefront --process web
+dovik process restart --project storefront --process web
+dovik process stop --project storefront --process web
+```
+
+A repeated start returns the active runtime instead of creating a duplicate. Restart waits for the owned process tree to terminate before creating a new runtime instance.
+
+## Remove definitions safely
+
+Stop a process before removing it. Remove every process owned by a project before removing the project itself.
+
+```console
+dovik process remove --project storefront --process web
+dovik project remove --id storefront
+```

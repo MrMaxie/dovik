@@ -1,0 +1,317 @@
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/fira-code';
+
+:root {
+  --dovik-page: #171c22;
+  --dovik-surface: #22282f;
+  --dovik-strong: #2d343c;
+  --dovik-ink: #f3f0e8;
+  --dovik-muted: #a6a49f;
+  --dovik-line: #3c4249;
+  --dovik-accent: #ff6b3d;
+  --dovik-heart: #ff789f;
+  --dovik-success: #7cd992;
+  --sl-font: "Space Grotesk Variable", system-ui, sans-serif;
+  --sl-font-mono: "Fira Code Variable", Consolas, monospace;
+  --sl-content-width: 48rem;
+  --sl-color-accent-low: #3b241e;
+  --sl-color-accent: var(--dovik-accent);
+  --sl-color-accent-high: var(--dovik-accent);
+  --sl-color-white: var(--dovik-ink);
+  --sl-color-gray-1: #d6d1c8;
+  --sl-color-gray-2: var(--dovik-muted);
+  --sl-color-gray-3: #858681;
+  --sl-color-gray-4: #666b6d;
+  --sl-color-gray-5: var(--dovik-line);
+  --sl-color-gray-6: var(--dovik-surface);
+  --sl-color-gray-7: #1b2026;
+  --sl-color-black: var(--dovik-page);
+  --sl-color-bg: var(--dovik-page);
+  --sl-color-bg-nav: color-mix(in srgb, var(--dovik-page) 92%, transparent);
+  --sl-color-bg-sidebar: #1b2026;
+  --sl-color-hairline: var(--dovik-line);
+  --sl-color-text-accent: var(--dovik-accent);
+}
+
+:root[data-theme="light"] {
+  --dovik-page: #faf8f3;
+  --dovik-surface: #efece5;
+  --dovik-strong: #e4dfd5;
+  --dovik-ink: #262523;
+  --dovik-muted: #69655f;
+  --dovik-line: #d3ccc0;
+  --dovik-accent: #c84018;
+  --dovik-heart: #e65782;
+  --dovik-success: #267a3c;
+  --sl-color-accent-low: #f8dfd5;
+  --sl-color-accent: var(--dovik-accent);
+  --sl-color-accent-high: #8a280c;
+  --sl-color-white: var(--dovik-ink);
+  --sl-color-gray-1: #3a3732;
+  --sl-color-gray-2: var(--dovik-muted);
+  --sl-color-gray-3: #858078;
+  --sl-color-gray-4: #aaa39a;
+  --sl-color-gray-5: var(--dovik-line);
+  --sl-color-gray-6: var(--dovik-surface);
+  --sl-color-gray-7: #f5f2ec;
+  --sl-color-black: var(--dovik-page);
+  --sl-color-bg-sidebar: #f5f2ec;
+  --sl-color-text-accent: #8a280c;
+}
+
+body {
+  background: var(--dovik-page);
+  font-family: var(--sl-font);
+  font-synthesis: none;
+}
+
+.header.header {
+  border-bottom-color: var(--dovik-line);
+  background: var(--sl-color-bg-nav);
+  backdrop-filter: blur(16px);
+}
+
+.site-title {
+  gap: 0.6rem;
+  color: var(--dovik-ink);
+  font-weight: 740;
+  letter-spacing: -0.03em;
+}
+
+.site-title img {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.sidebar-pane {
+  border-inline-end-color: var(--dovik-line);
+}
+
+.sidebar-content a {
+  border-radius: 0;
+  color: var(--dovik-muted);
+  font-size: 0.8rem;
+}
+
+.sidebar-content a[aria-current="page"] {
+  border-inline-start: 2px solid var(--dovik-accent);
+  background: transparent;
+  color: var(--dovik-ink);
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.sl-markdown-content {
+  color: var(--dovik-muted);
+  line-height: 1.75;
+}
+
+.sl-markdown-content :is(h1, h2, h3, strong) {
+  color: var(--dovik-ink);
+}
+
+.sl-markdown-content code:not(:where(.not-content *)) {
+  border: 1px solid var(--dovik-line);
+  border-radius: 0.2rem;
+  background: var(--dovik-strong);
+  color: var(--sl-color-text-accent);
+}
+
+.expressive-code figure,
+.pagination-links a {
+  border-color: var(--dovik-line);
+  border-radius: 0.25rem;
+  box-shadow: none;
+}
+
+[data-has-hero] .sl-container {
+  max-width: 75rem;
+}
+
+[data-has-hero] .sl-markdown-content {
+  max-width: none;
+}
+
+[data-has-hero] .sl-link-button.primary {
+  border-color: var(--dovik-accent);
+  background: var(--dovik-accent);
+  color: #171c22;
+}
+
+[data-has-hero] .sl-link-button.primary:hover {
+  border-color: color-mix(in srgb, var(--dovik-accent) 88%, var(--dovik-ink));
+  background: color-mix(in srgb, var(--dovik-accent) 88%, var(--dovik-ink));
+  color: #171c22;
+}
+
+.dovik-home-section {
+  padding-block: clamp(4rem, 8vw, 7rem);
+  border-top: 1px solid var(--dovik-line);
+}
+
+.dovik-section-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.7fr) minmax(32rem, 1.3fr);
+  gap: clamp(2.5rem, 6vw, 5rem);
+  align-items: center;
+}
+
+.dovik-kicker {
+  color: var(--dovik-accent);
+  font-family: var(--sl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dovik-capabilities {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 3rem;
+  border: 1px solid var(--dovik-line);
+  background: var(--dovik-line);
+}
+
+.dovik-capabilities article {
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--dovik-page);
+}
+
+.dovik-capabilities h3,
+.dovik-capabilities p {
+  margin: 0;
+}
+
+.dovik-capabilities p {
+  margin-top: 0.45rem;
+}
+
+.tui-preview {
+  margin: 0;
+  min-width: 0;
+  aspect-ratio: 1.95;
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid var(--dovik-line);
+  border-radius: 0.2rem;
+  background: #171c22;
+  font-family: "Cascadia Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-variant-ligatures: none;
+}
+
+.tui-terminal {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: hidden;
+  background: #171c22;
+  color: #f3f0e8;
+  font-size: 0.875rem;
+  letter-spacing: -0.01875px;
+  line-height: 1.315;
+}
+
+.tui-topbar,
+.tui-shortcuts {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  min-width: 0;
+  background: #22282f;
+  color: #f3f0e8;
+  white-space: pre;
+}
+
+.tui-topbar {
+  justify-content: space-between;
+  gap: 2ch;
+}
+
+.tui-brand.tui-brand {
+  color: #ff6b3d;
+  font-weight: 700;
+}
+
+.tui-title {
+  color: #a6a49f;
+}
+
+.tui-daemon i {
+  color: #7cd992;
+  font-style: normal;
+}
+
+.tui-empty-state {
+  margin: 0;
+  padding: 2.63em 2ch 0;
+}
+
+.tui-empty-state h3,
+.tui-empty-state p {
+  margin: 0;
+  color: #f3f0e8;
+  font: inherit;
+}
+
+.tui-empty-state h3 {
+  margin-bottom: 1.315em;
+  font-weight: 700;
+}
+
+.tui-shortcuts {
+  gap: 2ch;
+  padding-inline: 1ch;
+  overflow: hidden;
+}
+
+.tui-shortcuts b {
+  color: #ff6b3d;
+  font-weight: 700;
+}
+
+@container (max-width: 28rem) {
+  .tui-shortcuts > :nth-child(n + 3) {
+    display: none;
+  }
+}
+
+@media (max-width: 60rem) {
+  .dovik-section-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 42rem) {
+  .dovik-capabilities {
+    grid-template-columns: 1fr;
+  }
+
+  .tui-preview {
+    aspect-ratio: auto;
+  }
+
+  .tui-terminal {
+    height: auto;
+    font-size: 0.65rem;
+  }
+
+  .tui-daemon {
+    display: none;
+  }
+
+  .tui-empty-state {
+    min-height: 13rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}

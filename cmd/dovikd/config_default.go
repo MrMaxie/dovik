@@ -1,4 +1,4 @@
-//go:build !dovik_dev_harness
+//go:build !dovik_ttyglass
 
 package main
 

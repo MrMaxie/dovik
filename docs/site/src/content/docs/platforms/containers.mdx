@@ -1,0 +1,22 @@
+---
+title: Docker and Podman
+description: Distinguish the Dovik daemon image from optional isolated identity sessions.
+---
+
+## Daemon image
+
+The Linux amd64 image runs `dovikd` as UID 10001 and publishes no TCP port:
+
+```console
+docker run --rm ghcr.io/mrmaxie/dovik:1.0.0
+```
+
+The daemon controls only processes inside its container. Mounting host process or container-engine control surfaces would violate the supported boundary.
+
+Release tags `1.0.0`, `1.0`, `1`, and `latest` point to the same verified image digest.
+
+## Isolated agent sessions
+
+Docker and Podman are optional adapters for project identity isolation. Dovik starts the agent with a private stdio bridge, no exposed control port, no operator credentials, and no access to the engine socket. The requested adapter must already be installed and prepared by the operator.
+
+Docker and Podman acceptance is tested separately. Availability or success of one engine does not establish support for the other.

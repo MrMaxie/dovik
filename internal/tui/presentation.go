@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/MrMaxie/dovik/internal/supervision"
+	"github.com/MrMaxie/dovik/internal/terminalstyle"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -57,15 +58,15 @@ type presentation struct {
 
 func newPresentation(colorEnabled bool) presentation {
 	const (
-		canvas    = "#171C22"
-		surface   = "#22282F"
-		primary   = "#F3F0E8"
-		muted     = "#A6A49F"
-		accent    = "#FF6B3D"
-		success   = "#7CD992"
-		attention = "#E6C66A"
-		danger    = "#F08080"
-		border    = "#3C4249"
+		canvas    = terminalstyle.CanvasColor
+		surface   = terminalstyle.SurfaceColor
+		primary   = terminalstyle.PrimaryColor
+		muted     = terminalstyle.MutedColor
+		accent    = terminalstyle.AccentColor
+		success   = terminalstyle.SuccessColor
+		attention = terminalstyle.AttentionColor
+		danger    = terminalstyle.DangerColor
+		border    = terminalstyle.BorderColor
 	)
 
 	p := presentation{
@@ -188,6 +189,10 @@ func (model Model) viewportSize() (int, int) {
 }
 
 func (p presentation) renderHeader(model Model, width int) string {
+	return p.renderHeaderTitle(model, width, "Local processes")
+}
+
+func (p presentation) renderHeaderTitle(model Model, width int, title string) string {
 	brandStyle := p.brand
 	titleStyle := p.muted
 	if p.colorEnabled {
@@ -196,7 +201,7 @@ func (p presentation) renderHeader(model Model, width int) string {
 		titleStyle = titleStyle.Background(background)
 	}
 	brand := brandStyle.Render(" dovik ")
-	title := titleStyle.Render(" Local processes")
+	title = titleStyle.Render(" " + title)
 	status := p.renderDaemonIndicator(model)
 	leftWidth := max(0, width-lipgloss.Width(status)-1)
 	left := ansi.Truncate(brand+title, leftWidth, "")
@@ -381,6 +386,7 @@ func (p presentation) helpLines() []string {
 		p.key.Render("up/down, j/k") + "  Select process",
 		p.key.Render("s / x / r") + "    Start / stop / restart",
 		p.key.Render("PgUp/PgDn") + "    Scroll output",
+		p.key.Render("i") + "            Project identity and configuration",
 		p.key.Render("l / d / ? / q") + " Refresh / details / close help / quit",
 	}
 }
@@ -420,7 +426,7 @@ func (p presentation) renderShortcutBar(model Model, width int) string {
 			label = "Close"
 		}
 	}
-	shortcuts = append(shortcuts, p.renderKey("?", label), p.renderKey("q", "Quit"))
+	shortcuts = append(shortcuts, p.renderKey("i", "Identity"), p.renderKey("?", label), p.renderKey("q", "Quit"))
 	return p.header.Width(width).MaxWidth(width).Render(ansi.Truncate(" "+strings.Join(shortcuts, "  "), width, ""))
 }
 

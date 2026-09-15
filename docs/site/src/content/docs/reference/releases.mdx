@@ -1,0 +1,44 @@
+---
+title: Releases
+description: Verify Dovik archives, checksums, attestations, image tags, and platform limitations.
+---
+
+## Native artifacts
+
+Dovik 1.0.0 publishes these archives:
+
+- `dovik-v1.0.0-windows-x64.zip`
+- `dovik-v1.0.0-linux-x64.tar.gz`
+- `dovik-v1.0.0-macos-x64.tar.gz`
+- `dovik-v1.0.0-macos-arm64.tar.gz`
+
+Every native archive has an adjacent `.sha256` file. Verify the checksum before extraction, then confirm:
+
+```console
+dovik --version
+dovikd --version
+dovik --help
+dovikd --help
+```
+
+For 1.0.0, both version commands must report `1.0.0`. Linux and macOS binaries must retain executable permissions.
+
+GitHub build provenance attestations cover the release archives and checksums. The release workflow rebuilds on matching native runners from the tagged revision and verifies the unpacked file set outside the checkout.
+
+With GitHub CLI installed, verify downloaded release files with:
+
+```console
+gh attestation verify dovik-v1.0.0-windows-x64.zip --repo MrMaxie/dovik
+```
+
+Use `sha256sum -c FILE.sha256` on Linux or macOS. On Windows, compare `Get-FileHash FILE -Algorithm SHA256` with the value in the adjacent checksum file.
+
+The release also publishes `dovik.json`, a versioned Scoop manifest for Windows x64. It installs `dovik` and `dovikd`; activating the optional `gh` identity proxy remains an explicit operator choice.
+
+## Container image
+
+The release publishes `ghcr.io/mrmaxie/dovik` for Linux amd64 with tags `1.0.0`, `1.0`, `1`, and `latest`. The image runs as UID 10001, starts `dovikd`, exposes no network port, and manages only processes inside its own container. Inspect the image digest and provenance rather than assuming floating tags are unchanged.
+
+## Signing limitations
+
+Dovik 1.0.0 does not provide Authenticode signing or macOS notarization. It also does not ship installers, Homebrew, Winget, Linux arm64, or Windows arm64 packages.

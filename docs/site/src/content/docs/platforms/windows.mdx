@@ -1,0 +1,12 @@
+---
+title: Windows
+description: Run Dovik natively on Windows x64 through a current-user Named Pipe and Job Objects.
+---
+
+Use `dovik-v1.0.0-windows-x64.zip` or the release Scoop manifest. The native daemon restricts its Named Pipe to the current Windows user. Managed processes run in kill-on-close Job Objects so stopping a definition or terminating the daemon cleans up the owned process tree.
+
+The TUI can explicitly start a colocated `dovikd.exe` when the default daemon is offline. A custom endpoint remains connection-only.
+
+Native identity isolation requires a separate non-administrative account provisioned by the operator. Grant that account only the project access it needs. Dovik rejects privileged peers and accounts that can access Docker Desktop engine pipes.
+
+The 1.0.0 archive is not Authenticode-signed. Verify its published SHA-256 checksum and GitHub artifact attestation before use.
