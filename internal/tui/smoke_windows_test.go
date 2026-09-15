@@ -13,6 +13,7 @@ import (
 
 	"github.com/MrMaxie/dovik/internal/control"
 	"github.com/MrMaxie/dovik/internal/supervision"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const tuiHelperEnvironment = "DOVIK_TUI_HELPER"
@@ -67,8 +68,11 @@ func TestWindowsNamedPipeTUILifecycleSmoke(t *testing.T) {
 	if refreshCommand == nil {
 		t.Fatal("start did not request a refresh")
 	}
+	t.Cleanup(func() {
+		_, _ = client.Stop(context.Background(), "project", "worker")
+	})
 	started, _ = updateModel(t, started, refreshCommand())
-	if !strings.Contains(started.View().Content, "[RUNNING]") {
+	if !strings.Contains(ansi.Strip(started.View().Content), "RUNNING") {
 		t.Fatalf("TUI view does not show running state:\n%s", started.View().Content)
 	}
 
