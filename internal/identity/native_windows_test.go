@@ -89,6 +89,11 @@ func TestWindowsSeparateUserContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer token.Close()
+	for _, privilege := range []string{"SeAssignPrimaryTokenPrivilege", "SeIncreaseQuotaPrivilege"} {
+		if err := enableProcessPrivilege(privilege); err != nil {
+			t.Fatalf("enable %s: %v", privilege, err)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	child := exec.CommandContext(ctx, binary, "-test.run=^TestWindowsNativePeerFixture$")
@@ -98,6 +103,25 @@ func TestWindowsSeparateUserContext(t *testing.T) {
 	if output, err := child.CombinedOutput(); err != nil {
 		t.Fatalf("separate Windows user: %v %s", err, output)
 	}
+}
+
+func enableProcessPrivilege(name string) error {
+	var token windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token); err != nil {
+		return err
+	}
+	defer token.Close()
+	namePointer, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return err
+	}
+	var luid windows.LUID
+	if err := windows.LookupPrivilegeValue(nil, namePointer, &luid); err != nil {
+		return err
+	}
+	privileges := windows.Tokenprivileges{PrivilegeCount: 1}
+	privileges.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: windows.SE_PRIVILEGE_ENABLED}
+	return windows.AdjustTokenPrivileges(token, false, &privileges, 0, nil, nil)
 }
 
 var logonUserW = windows.NewLazySystemDLL("advapi32.dll").NewProc("LogonUserW")
