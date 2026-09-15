@@ -38,8 +38,8 @@ ttyglass-install:
     mise exec -- npm --prefix devtools/ttyglass ci --no-audit --no-fund
 
 openspec-check:
-    openspec schema validate arcantry
-    openspec validate --all --strict --no-interactive
+    mise exec -- npx --yes @fission-ai/openspec@1.5.0 schema validate arcantry
+    mise exec -- npx --yes @fission-ai/openspec@1.5.0 validate --all --strict --no-interactive
 
 check: lint test build openspec-check
 

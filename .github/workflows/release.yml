@@ -28,7 +28,7 @@ jobs:
           git fetch origin master
           git merge-base --is-ancestor "$GITHUB_SHA" origin/master
           test "$GITHUB_SHA" = "$(git rev-parse origin/master)"
-          test -z "$(openspec list --json | jq -r '.changes[]?.name')"
+          test -z "$(npx --yes @fission-ai/openspec@1.5.0 list --json | jq -r '.changes[]?.name')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: just release-source-check
 
