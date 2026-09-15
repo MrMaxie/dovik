@@ -24,26 +24,41 @@ func TestWindowsNativePeerFixture(t *testing.T) {
 	if endpoint == "" {
 		return
 	}
+	err := exerciseWindowsNativePeerFixture(endpoint, os.Getenv("DOVIK_NATIVE_FIXTURE_PRIVATE"))
+	if resultPath := os.Getenv("DOVIK_NATIVE_FIXTURE_RESULT"); resultPath != "" {
+		result := "ok"
+		if err != nil {
+			result = err.Error()
+		}
+		_ = os.WriteFile(resultPath, []byte(result), 0600)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func exerciseWindowsNativePeerFixture(endpoint, privatePath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	connection, err := DialAgent(ctx, endpoint)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	defer connection.Close()
 	if err := json.NewEncoder(connection).Encode(AgentRequest{Version: 1, Action: "context"}); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	var frame Frame
 	if err := json.NewDecoder(connection).Decode(&frame); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	if frame.Error != "" || frame.Context == nil || frame.Context.Persona.Account != "example" {
-		t.Fatal("wrong native identity context")
+		return fmt.Errorf("wrong native identity context")
 	}
-	if _, err := os.ReadFile(os.Getenv("DOVIK_NATIVE_FIXTURE_PRIVATE")); err == nil {
-		t.Fatal("agent read operator storage")
+	if _, err := os.ReadFile(privatePath); err == nil {
+		return fmt.Errorf("agent read operator storage")
 	}
+	return nil
 }
 
 func TestWindowsSeparateUserContext(t *testing.T) {
@@ -87,9 +102,11 @@ func TestWindowsSeparateUserContext(t *testing.T) {
 	if err := os.WriteFile(binary, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	resultPath := filepath.Join(projectRoot, "fixture-result.txt")
 	environment := []string{
 		"DOVIK_NATIVE_FIXTURE_ENDPOINT=" + session.Endpoint,
 		"DOVIK_NATIVE_FIXTURE_PRIVATE=" + service.Store.path,
+		"DOVIK_NATIVE_FIXTURE_RESULT=" + resultPath,
 		"SystemRoot=" + os.Getenv("SystemRoot"),
 		"TEMP=" + projectRoot,
 		"TMP=" + projectRoot,
@@ -98,7 +115,8 @@ func TestWindowsSeparateUserContext(t *testing.T) {
 	if exitCode, err := runFixtureWithLogon(username, password, binary, projectRoot, environment); err != nil {
 		t.Fatalf("separate Windows user: %v", err)
 	} else if exitCode != 0 {
-		t.Fatalf("separate Windows user exited with code %d", exitCode)
+		result, _ := os.ReadFile(resultPath)
+		t.Fatalf("separate Windows user exited with code %d: %s", exitCode, strings.TrimSpace(string(result)))
 	}
 }
 
