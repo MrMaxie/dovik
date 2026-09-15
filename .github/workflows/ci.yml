@@ -85,7 +85,7 @@ jobs:
       - name: Create disposable unprivileged account
         shell: pwsh
         run: |
-          $password = "Dv!$([guid]::NewGuid().ToString('N'))aA1"
+          $password = "Dv!$([guid]::NewGuid().ToString('N').Substring(0, 8))a1"
           Write-Output "::add-mask::$password"
           net user dovik-ci "$password" /add /passwordchg:no
           if ($LASTEXITCODE -ne 0) { throw "Could not create disposable account" }
@@ -96,7 +96,11 @@ jobs:
       - name: Remove disposable account
         if: always()
         shell: pwsh
-        run: net user dovik-ci /delete
+        run: |
+          if (Get-LocalUser -Name dovik-ci -ErrorAction SilentlyContinue) {
+            net user dovik-ci /delete
+            if ($LASTEXITCODE -ne 0) { throw "Could not remove disposable account" }
+          }
 
   docker:
     name: Docker integration

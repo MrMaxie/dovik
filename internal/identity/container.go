@@ -41,7 +41,14 @@ func validateMount(source string, protected []string) (string, error) {
 		if path == "" {
 			continue
 		}
-		if absolute, e := filepath.Abs(path); e == nil && (within(absolute, resolved) || within(resolved, absolute)) {
+		absolute, e := filepath.Abs(path)
+		if e != nil {
+			continue
+		}
+		if canonical, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
+			absolute = canonical
+		}
+		if within(absolute, resolved) || within(resolved, absolute) {
 			return "", fmt.Errorf("resource overlaps operator credentials, executables, or control state")
 		}
 	}
