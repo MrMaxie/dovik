@@ -41,7 +41,10 @@ openspec-check:
     mise exec -- npx --yes @fission-ai/openspec@1.5.0 schema validate arcantry
     mise exec -- npx --yes @fission-ai/openspec@1.5.0 validate --all --strict --no-interactive
 
-check: lint test build openspec-check
+npm-check:
+    mise exec -- npm run check:npm
+
+check: lint test build npm-check openspec-check
 
 docs-install:
     mise exec -- npm --prefix docs/site ci --no-audit --no-fund

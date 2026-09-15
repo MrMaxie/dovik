@@ -1,0 +1,17 @@
+{
+  "name": "@maxiedev/dovik-darwin-arm64",
+  "version": "1.0.0",
+  "description": "macOS arm64 native binaries for Dovik.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrMaxie/dovik.git"
+  },
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["bin", "LICENSE", "THIRD_PARTY_LICENSES.md"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

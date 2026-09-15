@@ -3,3 +3,7 @@
 /docs/site/.astro/
 /docs/site/dist/
 /docs/site/node_modules/
+/node_modules/
+/packages/*/bin/
+/packages/*/LICENSE
+/packages/*/THIRD_PARTY_LICENSES.md

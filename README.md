@@ -16,6 +16,20 @@ Dovik 1.0.0 is the first public release.
 
 Dovik does not provide DNS, HTTPS, reverse proxying, domain management, remote execution, scheduling, or container orchestration. [Cadder](https://github.com/MrMaxie/cadder) remains an independent future integration for endpoint allocation.
 
+## Install
+
+Install Dovik and its matching native package from npm:
+
+```console
+npm install --global dovik
+dovik --version
+dovikd --version
+```
+
+The npm package supports Windows x64, Linux x64, macOS x64, and macOS arm64. It installs `dovik` and `dovikd` only. It does not replace or configure your `gh` command.
+
+Portable archives remain available from the [GitHub Release](https://github.com/MrMaxie/dovik/releases/tag/v1.0.0).
+
 ## Quick start from source
 
 Install the pinned tools, build the binaries, and start the daemon:

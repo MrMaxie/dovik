@@ -1,0 +1,52 @@
+{
+  "name": "dovik",
+  "version": "1.0.0",
+  "description": "Supervise local development processes through one daemon, CLI, TUI, and MCP control plane.",
+  "keywords": [
+    "process-manager",
+    "development-tools",
+    "mcp",
+    "tui",
+    "github"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrMaxie/dovik.git"
+  },
+  "homepage": "https://maxie.dev/dovik/",
+  "bugs": {
+    "url": "https://github.com/MrMaxie/dovik/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "packageManager": "npm@12.0.2",
+  "bin": {
+    "dovik": "npm/dovik.js",
+    "dovikd": "npm/dovikd.js"
+  },
+  "files": [
+    "npm",
+    "skills",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "THIRD_PARTY_LICENSES.md"
+  ],
+  "scripts": {
+    "check:npm": "node scripts/check-npm-manifests.mjs && node scripts/check-npm-workflow.mjs",
+    "prepare:npm:native": "node scripts/prepare-npm-native.mjs",
+    "verify:npm": "node scripts/verify-npm-package.mjs"
+  },
+  "optionalDependencies": {
+    "@maxiedev/dovik-darwin-arm64": "1.0.0",
+    "@maxiedev/dovik-darwin-x64": "1.0.0",
+    "@maxiedev/dovik-linux-x64": "1.0.0",
+    "@maxiedev/dovik-win32-x64": "1.0.0"
+  }
+}

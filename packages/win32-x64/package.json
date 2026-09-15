@@ -1,0 +1,17 @@
+{
+  "name": "@maxiedev/dovik-win32-x64",
+  "version": "1.0.0",
+  "description": "Windows x64 native binaries for Dovik.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrMaxie/dovik.git"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin", "LICENSE", "THIRD_PARTY_LICENSES.md"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

@@ -1,7 +1,17 @@
 ---
 title: Updates
-description: Update portable archives, the container image, or Scoop while preserving private state.
+description: Update npm, portable archives, the container image, or Scoop while preserving private state.
 ---
+
+## npm
+
+Update the global package normally. npm selects the native package for the current platform and updates `dovik` and `dovikd` together.
+
+```console
+npm install --global dovik@latest
+```
+
+The npm package does not replace or configure your `gh` command.
 
 ## Portable archives
 
