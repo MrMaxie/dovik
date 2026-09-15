@@ -3,14 +3,17 @@ package identity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"syscall"
+	"sort"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -84,49 +87,24 @@ func TestWindowsSeparateUserContext(t *testing.T) {
 	if err := os.WriteFile(binary, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	token, err := logonFixtureUser(username, password)
-	if err != nil {
-		t.Fatal(err)
+	environment := []string{
+		"DOVIK_NATIVE_FIXTURE_ENDPOINT=" + session.Endpoint,
+		"DOVIK_NATIVE_FIXTURE_PRIVATE=" + service.Store.path,
+		"SystemRoot=" + os.Getenv("SystemRoot"),
+		"TEMP=" + projectRoot,
+		"TMP=" + projectRoot,
+		"WINDIR=" + os.Getenv("WINDIR"),
 	}
-	defer token.Close()
-	for _, privilege := range []string{"SeAssignPrimaryTokenPrivilege", "SeIncreaseQuotaPrivilege"} {
-		if err := enableProcessPrivilege(privilege); err != nil {
-			t.Fatalf("enable %s: %v", privilege, err)
-		}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	child := exec.CommandContext(ctx, binary, "-test.run=^TestWindowsNativePeerFixture$")
-	child.Dir = projectRoot
-	child.Env = append(os.Environ(), "DOVIK_NATIVE_FIXTURE_ENDPOINT="+session.Endpoint, "DOVIK_NATIVE_FIXTURE_PRIVATE="+service.Store.path)
-	child.SysProcAttr = &syscall.SysProcAttr{Token: syscall.Token(token)}
-	if output, err := child.CombinedOutput(); err != nil {
-		t.Fatalf("separate Windows user: %v %s", err, output)
+	if exitCode, err := runFixtureWithLogon(username, password, binary, projectRoot, environment); err != nil {
+		t.Fatalf("separate Windows user: %v", err)
+	} else if exitCode != 0 {
+		t.Fatalf("separate Windows user exited with code %d", exitCode)
 	}
 }
 
-func enableProcessPrivilege(name string) error {
-	var token windows.Token
-	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token); err != nil {
-		return err
-	}
-	defer token.Close()
-	namePointer, err := windows.UTF16PtrFromString(name)
-	if err != nil {
-		return err
-	}
-	var luid windows.LUID
-	if err := windows.LookupPrivilegeValue(nil, namePointer, &luid); err != nil {
-		return err
-	}
-	privileges := windows.Tokenprivileges{PrivilegeCount: 1}
-	privileges.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: windows.SE_PRIVILEGE_ENABLED}
-	return windows.AdjustTokenPrivileges(token, false, &privileges, 0, nil, nil)
-}
+var createProcessWithLogonW = windows.NewLazySystemDLL("advapi32.dll").NewProc("CreateProcessWithLogonW")
 
-var logonUserW = windows.NewLazySystemDLL("advapi32.dll").NewProc("LogonUserW")
-
-func logonFixtureUser(username, password string) (windows.Token, error) {
+func runFixtureWithLogon(username, password, binary, directory string, environment []string) (uint32, error) {
 	userPointer, err := windows.UTF16PtrFromString(username)
 	if err != nil {
 		return 0, err
@@ -139,19 +117,63 @@ func logonFixtureUser(username, password string) (windows.Token, error) {
 	if err != nil {
 		return 0, err
 	}
-	var token windows.Token
-	result, _, callErr := logonUserW.Call(
+	binaryPointer, err := windows.UTF16PtrFromString(binary)
+	if err != nil {
+		return 0, err
+	}
+	commandLine, err := windows.UTF16FromString(windows.ComposeCommandLine([]string{binary, "-test.run=^TestWindowsNativePeerFixture$"}))
+	if err != nil {
+		return 0, err
+	}
+	directoryPointer, err := windows.UTF16PtrFromString(directory)
+	if err != nil {
+		return 0, err
+	}
+	sort.Slice(environment, func(i, j int) bool {
+		return strings.ToLower(environment[i]) < strings.ToLower(environment[j])
+	})
+	var environmentBlock []uint16
+	for _, entry := range environment {
+		environmentBlock = append(environmentBlock, utf16.Encode([]rune(entry))...)
+		environmentBlock = append(environmentBlock, 0)
+	}
+	environmentBlock = append(environmentBlock, 0)
+	startup := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{}))}
+	var process windows.ProcessInformation
+	result, _, callErr := createProcessWithLogonW.Call(
 		uintptr(unsafe.Pointer(userPointer)),
 		uintptr(unsafe.Pointer(domainPointer)),
 		uintptr(unsafe.Pointer(passwordPointer)),
-		2,
 		0,
-		uintptr(unsafe.Pointer(&token)),
+		uintptr(unsafe.Pointer(binaryPointer)),
+		uintptr(unsafe.Pointer(&commandLine[0])),
+		windows.CREATE_UNICODE_ENVIRONMENT,
+		uintptr(unsafe.Pointer(&environmentBlock[0])),
+		uintptr(unsafe.Pointer(directoryPointer)),
+		uintptr(unsafe.Pointer(&startup)),
+		uintptr(unsafe.Pointer(&process)),
 	)
 	if result == 0 {
 		return 0, callErr
 	}
-	return token, nil
+	defer windows.CloseHandle(process.Process)
+	defer windows.CloseHandle(process.Thread)
+	event, err := windows.WaitForSingleObject(process.Process, 20_000)
+	if err != nil {
+		return 0, err
+	}
+	if event == uint32(windows.WAIT_TIMEOUT) {
+		_ = windows.TerminateProcess(process.Process, 1)
+		return 0, context.DeadlineExceeded
+	}
+	if event != windows.WAIT_OBJECT_0 {
+		return 0, fmt.Errorf("unexpected process wait result %d", event)
+	}
+	var exitCode uint32
+	if err := windows.GetExitCodeProcess(process.Process, &exitCode); err != nil {
+		return 0, err
+	}
+	return exitCode, nil
 }
 
 func TestNativeRejectsOperatorAccount(t *testing.T) {
