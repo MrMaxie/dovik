@@ -91,5 +91,5 @@ func authenticateAgent(connection net.Conn, principal string, projectRoot string
 }
 
 func DialAgent(ctx context.Context, endpoint string) (net.Conn, error) {
-	return winio.DialPipeContext(ctx, endpoint)
+	return winio.DialPipeAccessImpLevel(ctx, endpoint, uint32(windows.GENERIC_READ|windows.GENERIC_WRITE), winio.PipeImpLevelImpersonation)
 }

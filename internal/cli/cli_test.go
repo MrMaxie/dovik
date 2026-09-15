@@ -192,7 +192,12 @@ func startCLITestServer(t *testing.T) (string, func()) {
 	if runtime.GOOS == "windows" {
 		endpoint = fmt.Sprintf(`\\.\pipe\dovik-cli-test-%d-%d`, os.Getpid(), time.Now().UnixNano())
 	} else {
-		endpoint = filepath.Join(t.TempDir(), "state", "control.sock")
+		directory, err := os.MkdirTemp("", "dovik-cli-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(directory) })
+		endpoint = filepath.Join(directory, "control.sock")
 	}
 	listener, err := control.ListenLocal(endpoint)
 	if err != nil {

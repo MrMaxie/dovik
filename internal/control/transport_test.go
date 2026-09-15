@@ -56,5 +56,10 @@ func testEndpoint(t *testing.T) (string, error) {
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf(`\\.\pipe\dovik-test-%d-%d`, os.Getpid(), time.Now().UnixNano()), nil
 	}
-	return t.TempDir() + string(os.PathSeparator) + "state" + string(os.PathSeparator) + "control.sock", nil
+	directory, err := os.MkdirTemp("", "dovik-control-")
+	if err != nil {
+		return "", err
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(directory) })
+	return directory + string(os.PathSeparator) + "control.sock", nil
 }
