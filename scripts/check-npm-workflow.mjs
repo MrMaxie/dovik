@@ -12,6 +12,8 @@ assert.match(source, /permissions:\s*\n\s*contents: read/);
 assert.match(source, /environment: npm-production/);
 assert.match(source, /id-token: write/);
 assert.match(source, /if: github\.event_name == 'release' \|\| inputs\.stage == true/);
+assert.match(source, /package_version="\$\(node -p "require\('\.\/package\.json'\)\.version"\)"/);
+assert.equal(source.includes('node -p \\"'), false);
 assert.equal(source.includes('NPM_TOKEN'), false);
 assert.equal(source.includes('NODE_AUTH_TOKEN'), false);
 assert.equal(source.includes('npm publish '), false);
