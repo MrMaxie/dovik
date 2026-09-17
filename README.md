@@ -2,7 +2,7 @@
 
 Dovik is a local supervisor for development processes. One daemon owns each registered process, its lifecycle, current status, and bounded stdout and stderr. Humans and coding agents use the same local control plane through the CLI, TUI, or MCP.
 
-Dovik also keeps project Git authors and GitHub accounts aligned through explicit identity personas, a governed `gh` proxy, and optional isolated agent sessions.
+Dovik also keeps project Git authors and GitHub accounts aligned through explicit identity personas, a transparent `gh` proxy, and optional governed agent sessions.
 
 Dovik 1.0.0 is the first public release.
 
@@ -12,7 +12,7 @@ Dovik 1.0.0 is the first public release.
 - Direct process start, stop, restart, status, and process-tree cleanup.
 - Bounded stdout and stderr events for the current or latest process run.
 - Local-only client access through a Windows Named Pipe or Unix Domain Socket.
-- Project identity policy and governed GitHub CLI execution.
+- Project identity routing and governed GitHub CLI execution inside isolated sessions.
 
 Dovik does not provide DNS, HTTPS, reverse proxying, domain management, remote execution, scheduling, or container orchestration. [Cadder](https://github.com/MrMaxie/cadder) remains an independent future integration for endpoint allocation.
 
@@ -48,9 +48,10 @@ dovik process add --project example --id app --command /absolute/path/to/app --a
 dovik process start --project example --process app
 dovik process status --project example --process app
 dovik process logs --project example --process app --tail 100
+dovik process logs --project example --process app --follow
 ```
 
-Open the interactive operator view with `dovik tui`. Configure project identity with `dovik project configure`. Run the local stdio MCP adapter with `dovik mcp`.
+Run bare `dovik` in an interactive terminal to choose help, project identity configuration, or the TUI. Direct commands remain available as `dovik tui`, `dovik project configure`, and `dovik mcp`.
 
 ## Documentation
 

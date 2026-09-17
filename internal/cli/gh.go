@@ -83,15 +83,22 @@ func runGHWith(ctx context.Context, client ghClient, args []string, stdin io.Rea
 		}
 		return 0, nil
 	}
-	if len(args) == 2 && args[0] == "pr" && args[1] == "create" {
+	if isGitCredentialGet(args) {
+		in, err := prepareInvocation(args, stdin)
+		if err != nil {
+			return 2, err
+		}
+		return client.ExecuteGH(ctx, identity.ExecutionRequest{ProjectID: project.ID, SessionID: os.Getenv("DOVIK_SESSION"), Invocation: in}, stdout, stderr)
+	}
+	if project.Mode == "proxy-level" && os.Getenv("DOVIK_SESSION") == "" {
+		if err := allowOrdinaryGH(args); err != nil {
+			return 1, err
+		}
 		persona, err := snapshot.State.FindPersona(project.Persona)
 		if err != nil {
 			return 1, err
 		}
-		command, authorizationErr := identity.Authorize(project, persona, identity.Invocation{Arguments: args})
-		if authorizationErr == nil && command.Interactive {
-			return runInteractiveGH(ctx, client, snapshot.State.GHPath, project, persona, command.Arguments, stdin, stdout, stderr, runOriginal)
-		}
+		return runPersonaGH(ctx, client, snapshot.State.GHPath, project, persona, args, stdin, stdout, stderr, runOriginal)
 	}
 	in, err := prepareInvocation(args, stdin)
 	if err != nil {
@@ -100,7 +107,7 @@ func runGHWith(ctx context.Context, client ghClient, args []string, stdin io.Rea
 	return client.ExecuteGH(ctx, identity.ExecutionRequest{ProjectID: project.ID, SessionID: os.Getenv("DOVIK_SESSION"), Invocation: in}, stdout, stderr)
 }
 
-func runInteractiveGH(ctx context.Context, client ghClient, path string, project identity.Project, persona identity.Persona, args []string, stdin io.Reader, stdout, stderr io.Writer, runOriginal ghOriginalRunner) (int, error) {
+func runPersonaGH(ctx context.Context, client ghClient, path string, project identity.Project, persona identity.Persona, args []string, stdin io.Reader, stdout, stderr io.Writer, runOriginal ghOriginalRunner) (int, error) {
 	request := identity.ExecutionRequest{ProjectID: project.ID, Invocation: identity.Invocation{
 		Arguments: []string{"auth", "git-credential", "get"},
 		Input:     []byte("protocol=https\nhost=" + persona.Host + "\npath=" + project.Repository + "\n\n"),
@@ -124,6 +131,32 @@ func runInteractiveGH(ctx context.Context, client ghClient, path string, project
 		return 1, errors.New("GitHub authentication is unavailable")
 	}
 	return runOriginal(ctx, path, args, stdin, stdout, stderr, interactiveGHEnvironment(persona, token))
+}
+
+func allowOrdinaryGH(args []string) error {
+	if len(args) < 2 || args[0] != "auth" {
+		return nil
+	}
+	blocked := map[string]bool{
+		"login": true, "logout": true, "refresh": true, "setup-git": true,
+		"switch": true, "token": true,
+	}
+	if blocked[args[1]] {
+		return errors.New("authentication management is unavailable for this project")
+	}
+	if args[1] == "status" {
+		for _, arg := range args[2:] {
+			if arg == "--show-token" || strings.HasPrefix(arg, "--show-token=") ||
+				(strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(strings.TrimPrefix(arg, "-"), "t")) {
+				return errors.New("authentication credentials are unavailable for this project")
+			}
+		}
+	}
+	return nil
+}
+
+func isGitCredentialGet(args []string) bool {
+	return len(args) == 3 && args[0] == "auth" && args[1] == "git-credential" && args[2] == "get"
 }
 
 func interactiveGHEnvironment(persona identity.Persona, token string) []string {

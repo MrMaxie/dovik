@@ -189,22 +189,11 @@ func runSessionCommand(ctx context.Context, client operatorclient.Client, args [
 		if action != "context" && action != "persona" {
 			return fmt.Errorf("session administration requires the operator terminal")
 		}
-		connection, err := identity.DialAgent(ctx, endpoint)
+		agentContext, err := callAgentContext(ctx, endpoint, action, *persona)
 		if err != nil {
 			return err
 		}
-		defer connection.Close()
-		if err := json.NewEncoder(connection).Encode(identity.AgentRequest{Version: 1, Action: action, PersonaID: *persona}); err != nil {
-			return err
-		}
-		var frame identity.Frame
-		if err := json.NewDecoder(connection).Decode(&frame); err != nil {
-			return err
-		}
-		if frame.Error != "" {
-			return fmt.Errorf("%s", frame.Error)
-		}
-		return writeJSON(stdout, frame.Context)
+		return writeJSON(stdout, agentContext)
 	}
 	action := "get"
 	switch args[1] {

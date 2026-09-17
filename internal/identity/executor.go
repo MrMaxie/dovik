@@ -64,6 +64,9 @@ func operatorEnvironment() []string {
 
 func commandEnvironment(directory string, persona Persona, token string) []string {
 	env := []string{"HOME=" + directory, "USERPROFILE=" + directory, "GH_CONFIG_DIR=" + directory, "XDG_CONFIG_HOME=" + directory, "GH_HOST=" + persona.Host, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1", "GH_NO_EXTENSION_UPDATE_NOTIFIER=1", "GH_PAGER=cat", "NO_COLOR=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_TERMINAL_PROMPT=0"}
+	if directory := trustedExecutableDirectory("git"); directory != "" {
+		env = append(env, "PATH="+directory)
+	}
 	if runtime.GOOS == "windows" {
 		env = append(env, "SystemRoot="+os.Getenv("SystemRoot"), "WINDIR="+os.Getenv("WINDIR"))
 	}
@@ -72,6 +75,26 @@ func commandEnvironment(directory string, persona Persona, token string) []strin
 		key = "GH_TOKEN"
 	}
 	return append(env, key+"="+token)
+}
+
+func trustedExecutableDirectory(name string) string {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return ""
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return filepath.Dir(path)
 }
 
 func (executor Executor) Run(ctx context.Context, gh string, project Project, persona Persona, in Invocation, stdout, stderr io.Writer) (int, error) {

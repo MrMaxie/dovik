@@ -1,5 +1,5 @@
 ---
-title: Identity and governed gh
+title: Identity and transparent gh
 description: Align Git authors and GitHub accounts per project without changing global GitHub authentication state.
 ---
 
@@ -8,17 +8,18 @@ description: Align Git authors and GitHub accounts per project without changing 
 Run the terminal questionnaire from the project or pass its root explicitly:
 
 ```console
+dovik
 dovik project configure
 dovik project configure --root /absolute/path/to/project
 ```
 
-When possible, Dovik derives the project root and GitHub repository from the checkout. The original GitHub CLI path is global daemon configuration: the first setup asks for it, and later projects reuse the same value instead of asking again. The questionnaire proposes saved personas and accounts discovered from the original CLI, then selects a Git author, policy preset, explicit exceptions, and enforcement mode.
+Bare `dovik` offers `Configure this repository` or `Edit this repository` when it runs inside a Git checkout. When possible, Dovik derives the project root and GitHub repository from the checkout. The original GitHub CLI path is global daemon configuration: the first setup asks for it, and later projects reuse the same value instead of asking again. The questionnaire proposes saved personas and accounts discovered from the original CLI, then selects an optional Git author and enforcement mode. Policy presets, explicit exceptions, and alternative personas appear only for agent-isolation.
 
 Nothing is saved until you confirm the summary. Canceling leaves the identity store unchanged. Omitting a policy grants no permissions.
 
-The TUI exposes the same flow. Press `i` to open the project identity workspace, then `c` to configure the selected project. Identity, policy, sessions, and the questionnaire share the normal Dovik terminal layout and colors.
+The TUI exposes Personas, Projects, and Processes as counted top-level tabs in dependency order. Use left and right to switch tabs, up and down to select an entity, `l` to refresh, and Enter to edit the selected project or persona. Press `i` in Processes to jump directly to Projects. Projects lists every repository operation once, using a filled marker for allowed and a hollow marker for blocked. Personas separates saved public account metadata, Git author fields, and project assignments. Field values use a small indent below their labels. Editors stay inside the main TUI, subdue the underlying navigator, keep all applicable fields in one focused form, and use a separate confirmation modal before saving.
 
-## Use the governed proxy
+## Use the transparent proxy
 
 Run GitHub operations through:
 
@@ -27,15 +28,15 @@ dovik gh -- repo view
 dovik gh -- pr list
 ```
 
-The optional bundled `gh` executable provides the same proxy when intentionally placed before the original GitHub CLI on `PATH`. Dovik uses the centrally configured original CLI, verifies the project and selected account, and executes a recognized operation without calling `gh auth switch`.
+The optional bundled `gh` executable provides the same proxy when intentionally placed before the original GitHub CLI on `PATH`. Dovik uses the centrally configured original CLI and the selected project account without calling `gh auth switch`. Ordinary commands, aliases, extensions, and commands introduced by newer GitHub CLI versions pass through unchanged. GitHub CLI remains responsible for parsing and validating them.
 
-Repositories without configured Dovik identity use the original GitHub CLI unchanged. Running `gh` never opens the identity questionnaire or requires an agent to select a persona. Governance begins only after an operator explicitly configures that repository.
+Repositories without configured Dovik identity use the original GitHub CLI unchanged. Running `gh` never opens the identity questionnaire or requires an agent to select a persona. Persona routing begins only after an operator explicitly configures that repository.
 
-Normal help, empty invocations, output, exit codes, and interactive terminal behavior remain those of the original GitHub CLI. Agents and scripts continue to call ordinary `gh`; they do not need to understand or configure Dovik.
+Normal help, empty invocations, arguments, input, output, exit codes, and interactive terminal behavior remain those of the original GitHub CLI. Safe inspection such as `gh auth status` works normally. Authentication mutation and direct token export remain unavailable in a configured project. Agents and scripts continue to call ordinary `gh`; they do not need to understand or configure Dovik.
 
 ## Repository permissions
 
-Dovik reports eight repository-operation permissions: read, comment, create, edit, close, review, merge, and Actions. Persona switching is a separate permission because it changes identity rather than repository capability.
+Dovik reports eight repository-operation permissions for isolated agent sessions: read, comment, create, edit, close, review, merge, and Actions. Persona switching is a separate permission because it changes identity rather than repository capability. Ordinary proxy-level terminals use the complete GitHub CLI surface and do not apply this command policy.
 
 The presets provide a starting point:
 
@@ -47,8 +48,32 @@ Explicit exceptions can allow or deny an individual operation without changing t
 
 ## Enforcement modes
 
-- `proxy-level` is the default. It governs calls made through Dovik but a process with the operator's operating-system privileges can bypass the proxy.
+- `proxy-level` is the default. It selects the configured project persona while preserving ordinary GitHub CLI behavior. It is not a same-user security boundary.
 - Native isolation uses an operator-provisioned, non-administrative account and authenticates the restricted session by operating-system peer identity.
 - Container isolation uses Docker or Podman and a private stdio bridge. The agent receives no control port, operator credential store, or container-engine access.
 
 Isolation fails closed. Dovik never silently falls back to proxy-level enforcement.
+
+## Show the current persona in Starship
+
+`dovik whoami` is a fast local status command for shell prompts. It prints only one value:
+
+- the selected persona display name for a configured repository;
+- `?` when the repository is not configured or the directory is outside Git;
+- `!` when the daemon or isolated-session context is unavailable within 400 milliseconds.
+
+The command does not contact GitHub or prove that a stored login is still valid. Use `dovik --json whoami` when a script needs the explicit `configured`, `unconfigured`, `not_repository`, or `unavailable` state.
+
+Add this portable custom module to Starship:
+
+```toml
+[custom.dovik_persona]
+command = "dovik whoami"
+when = true
+require_repo = true
+format = "git:[$output]($style) "
+```
+
+Starship uses `~/.config/starship.toml` by default on Windows, Linux, and macOS. When `STARSHIP_CONFIG` is set, edit the referenced file instead. The same module works with PowerShell, cmd, bash, zsh, and fish as long as `dovik` is on the shell's `PATH`. `when = true` enables the module, `require_repo = true` avoids running the command outside Git repositories, and the normal Starship timeout keeps an unavailable local service from delaying the prompt.
+
+The result follows the Dovik persona name. A persona named `Personal` renders as `git:Personal`; renaming the persona changes the prompt without another Starship edit.

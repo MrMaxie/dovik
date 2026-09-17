@@ -137,20 +137,52 @@ func TestGHUnavailableDaemonFallsBackToOriginalCLI(t *testing.T) {
 	}
 }
 
-func TestGHConfiguredProjectUsesGovernedExecution(t *testing.T) {
+func TestGHConfiguredProjectUsesSelectedPersonaInCurrentTerminal(t *testing.T) {
+	client := &stubGHClient{
+		executeOutput: "username=x-access-token\npassword=selected-token\n\n",
+		snapshot: identity.Snapshot{State: identity.State{
+			GHPath:   "original-gh",
+			Personas: []identity.Persona{{ID: "persona", Host: "github.com", Account: "example"}},
+			Projects: []identity.Project{{
+				ID: "project", Root: "project-root", Repository: "owner/repo", Persona: "persona",
+				Mode: "proxy-level", Policy: identity.Policy{Preset: "read-only"}, ProxyEnabled: true,
+			}},
+		}},
+	}
+	called := false
+	code, err := runGHWith(context.Background(), client, []string{"issue", "list"}, strings.NewReader(""), io.Discard, io.Discard,
+		func(context.Context, string) (string, error) { return "project-root", nil },
+		func(_ context.Context, path string, args []string, _ io.Reader, _, _ io.Writer, environment []string) (int, error) {
+			called = true
+			if path != "original-gh" || strings.Join(args, " ") != "issue list" {
+				t.Fatalf("original invocation = %q %v", path, args)
+			}
+			if !environmentContains(environment, "GH_TOKEN=selected-token") {
+				t.Fatal("configured persona token was not selected")
+			}
+			return 0, nil
+		},
+	)
+	if err != nil || code != 0 || !called || client.executeCalls != 1 {
+		t.Fatalf("code=%d err=%v called=%t execute=%d", code, err, called, client.executeCalls)
+	}
+}
+
+func TestGHIsolatedSessionUsesGovernedExecution(t *testing.T) {
+	t.Setenv("DOVIK_SESSION", "session")
 	client := &stubGHClient{snapshot: identity.Snapshot{State: identity.State{Projects: []identity.Project{{
 		ID: "project", Root: "project-root", Repository: "owner/repo", Persona: "persona",
-		Mode: "proxy-level", Policy: identity.Policy{Preset: "read-only"}, ProxyEnabled: true,
+		Mode: "agent-isolation", Policy: identity.Policy{Preset: "read-only"}, ProxyEnabled: true,
 	}}}}}
 	code, err := runGHWith(context.Background(), client, []string{"issue", "list"}, strings.NewReader(""), io.Discard, io.Discard,
 		func(context.Context, string) (string, error) { return "project-root", nil },
 		func(context.Context, string, []string, io.Reader, io.Writer, io.Writer, []string) (int, error) {
-			t.Fatal("configured project bypassed governed execution")
+			t.Fatal("isolated session bypassed governed execution")
 			return 0, nil
 		},
 	)
-	if err != nil || code != 0 || client.executeCalls != 1 {
-		t.Fatalf("code=%d err=%v execute=%d", code, err, client.executeCalls)
+	if err != nil || code != 0 || client.executeCalls != 1 || client.lastRequest.SessionID != "session" {
+		t.Fatalf("code=%d err=%v execute=%d request=%+v", code, err, client.executeCalls, client.lastRequest)
 	}
 }
 
@@ -173,7 +205,7 @@ func TestGHInteractivePRCreateUsesSelectedPersonaInCurrentTerminal(t *testing.T)
 		func(context.Context, string) (string, error) { return "project-root", nil },
 		func(_ context.Context, path string, args []string, input io.Reader, _, _ io.Writer, environment []string) (int, error) {
 			called = true
-			if path != "original-gh" || strings.Join(args, " ") != "pr create --repo github.com/owner/repo" {
+			if path != "original-gh" || strings.Join(args, " ") != "pr create" {
 				t.Fatalf("unexpected original invocation: path=%q args=%q", path, args)
 			}
 			values := map[string]string{}
@@ -194,4 +226,13 @@ func TestGHInteractivePRCreateUsesSelectedPersonaInCurrentTerminal(t *testing.T)
 	if err != nil || code != 0 || !called || client.executeCalls != 1 {
 		t.Fatalf("code=%d err=%v called=%t execute=%d", code, err, called, client.executeCalls)
 	}
+}
+
+func environmentContains(environment []string, expected string) bool {
+	for _, item := range environment {
+		if item == expected {
+			return true
+		}
+	}
+	return false
 }

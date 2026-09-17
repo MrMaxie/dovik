@@ -18,7 +18,8 @@ import (
 	"github.com/MrMaxie/dovik/internal/mcpoperator"
 	"github.com/MrMaxie/dovik/internal/operatorclient"
 	"github.com/MrMaxie/dovik/internal/supervision"
-	"github.com/MrMaxie/dovik/internal/tui"
+	"github.com/MrMaxie/dovik/internal/terminalstyle"
+	"github.com/charmbracelet/x/term"
 )
 
 type outputMode struct {
@@ -84,8 +85,15 @@ func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.W
 		if mode.json {
 			return writeFailure(stderr, true, invalidArguments(errors.New("command is required")), 2)
 		}
-		writeUsage(stderr)
-		return 2
+		if !interactive(stdin, stdout) || !rootEntryAllowed() {
+			writeUsage(stdout)
+			return 0
+		}
+		client := control.NewClient(endpoint)
+		if err := runRootEntry(ctx, client, endpoint, defaultEndpoint, stdin, stdout); err != nil {
+			return writeFailure(stderr, false, classifyClientError(err), 1)
+		}
+		return 0
 	}
 
 	client := control.NewClient(endpoint)
@@ -95,6 +103,15 @@ func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.W
 			return writeFailure(stderr, mode.json, &commandError{code: "session_error", message: err.Error()}, 1)
 		}
 		return code
+	}
+	if remaining[0] == "whoami" {
+		if len(remaining) != 1 {
+			return writeFailure(stderr, mode.json, invalidArguments(errors.New("whoami accepts no arguments")), 2)
+		}
+		if err := runWhoAmI(ctx, client, stdout, mode); err != nil {
+			return writeFailure(stderr, mode.json, classifyClientError(err), 1)
+		}
+		return 0
 	}
 	if os.Getenv("DOVIK_AGENT_ENDPOINT") != "" && remaining[0] != "gh" && remaining[0] != "session" {
 		return writeFailure(stderr, mode.json, &commandError{code: "permission_denied", message: "use the operator terminal to administer Dovik"}, 1)
@@ -152,11 +169,7 @@ func RunIO(ctx context.Context, arguments []string, stdin io.Reader, stdout io.W
 		if len(remaining) != 1 {
 			return writeFailure(stderr, false, invalidArguments(errors.New("tui accepts no arguments")), 2)
 		}
-		launcher, err := resolveTUIDaemonLauncher(endpoint, defaultEndpoint)
-		if err != nil {
-			return writeFailure(stderr, false, &commandError{code: "configuration_error", message: err.Error(), cause: err}, 1)
-		}
-		if err := tui.RunWithDaemonLauncher(ctx, client, launcher, stdin, stdout); err != nil {
+		if err := runTUI(ctx, client, endpoint, defaultEndpoint, stdin, stdout); err != nil {
 			return writeFailure(stderr, false, classifyClientError(err), 1)
 		}
 		return 0
@@ -366,29 +379,72 @@ func runProcessCommand(ctx context.Context, client operatorclient.Client, argume
 		processID := flags.String("process", "", "process ID")
 		tailLimit := flags.Int("tail", 100, "maximum retained events")
 		after := flags.Uint64("after", 0, "return events after this sequence")
+		follow := flags.Bool("follow", false, "follow later output until interrupted")
 		if err := parseExact(flags, arguments[1:]); err != nil {
 			return err
 		}
-		tail, err := client.Logs(ctx, supervision.ProjectID(*projectID), supervision.ProcessID(*processID), *after, *tailLimit)
+		if mode.json && *follow {
+			return invalidArguments(errors.New("process logs --follow does not support --json"))
+		}
+		return runProcessLogs(ctx, client, supervision.ProjectID(*projectID), supervision.ProcessID(*processID), *after, *tailLimit, *follow, stdout, mode)
+	default:
+		return invalidArguments(fmt.Errorf("unknown process command %q", arguments[0]))
+	}
+}
+
+func runProcessLogs(ctx context.Context, client operatorclient.Client, projectID supervision.ProjectID, processID supervision.ProcessID, after uint64, limit int, follow bool, stdout io.Writer, mode outputMode) error {
+	first := true
+	for {
+		tail, err := client.Logs(ctx, projectID, processID, after, limit)
 		if err != nil {
+			if follow && ctx.Err() != nil {
+				return nil
+			}
 			return err
 		}
 		if mode.json {
 			return writeJSON(stdout, outputTailResult(tail))
 		}
-		if tail.Truncated {
+		if first && tail.Truncated {
 			fmt.Fprintln(stdout, "[output truncated]")
 		}
 		for _, event := range tail.Events {
-			fmt.Fprintf(stdout, "[%s] %s", event.Stream, event.Data)
-			if len(event.Data) == 0 || event.Data[len(event.Data)-1] != '\n' {
-				fmt.Fprintln(stdout)
+			writeOutputEvent(stdout, event)
+			if event.Sequence > after {
+				after = event.Sequence
 			}
 		}
-		return nil
-	default:
-		return invalidArguments(fmt.Errorf("unknown process command %q", arguments[0]))
+		first = false
+		if !follow {
+			return nil
+		}
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil
+		case <-timer.C:
+		}
 	}
+}
+
+func writeOutputEvent(writer io.Writer, event supervision.OutputEvent) {
+	data := terminalstyle.RenderOutput(string(event.Data), interactiveOutput(writer))
+	fmt.Fprintf(writer, "[%s] %s", event.Stream, data)
+	if data == "" || data[len(data)-1] != '\n' {
+		fmt.Fprintln(writer)
+	}
+}
+
+func interactiveOutput(writer io.Writer) bool {
+	file, ok := writer.(*os.File)
+	if !ok || !term.IsTerminal(file.Fd()) {
+		return false
+	}
+	value, present := os.LookupEnv("NO_COLOR")
+	return !present || value == ""
 }
 
 func parseProcessReference(name string, arguments []string, stderr io.Writer, mode outputMode) (supervision.ProjectID, supervision.ProcessID, error) {
@@ -520,8 +576,10 @@ func writeHelp(writer io.Writer, topic []string) {
 		fmt.Fprintln(writer, "Dovik supervises local development processes through one local daemon.")
 		fmt.Fprintln(writer)
 		fmt.Fprintln(writer, "Usage:")
+		fmt.Fprintln(writer, "  dovik")
 		fmt.Fprintln(writer, "  dovik [--endpoint PATH] [--json] project|process COMMAND [OPTIONS]")
 		fmt.Fprintln(writer, "  dovik [--endpoint PATH] tui")
+		fmt.Fprintln(writer, "  dovik [--endpoint PATH] [--json] whoami")
 		fmt.Fprintln(writer, "  dovik [--endpoint PATH] mcp")
 		fmt.Fprintln(writer, "  dovik [--endpoint PATH] gh -- GH_ARGUMENTS")
 		fmt.Fprintln(writer, "  dovik [--endpoint PATH] [--json] identity|policy|session|doctor [OPTIONS]")
@@ -556,9 +614,11 @@ func writeHelp(writer io.Writer, topic []string) {
 	case "process list":
 		fmt.Fprintln(writer, "Usage: dovik process list --project ID")
 	case "process logs":
-		fmt.Fprintln(writer, "Usage: dovik process logs --project ID --process ID [--tail COUNT]")
+		fmt.Fprintln(writer, "Usage: dovik process logs --project ID --process ID [--tail COUNT] [--follow]")
 	case "tui":
 		fmt.Fprintln(writer, "Usage: dovik tui")
+	case "whoami":
+		fmt.Fprintln(writer, "Usage: dovik [--json] whoami")
 	case "mcp":
 		fmt.Fprintln(writer, "Usage: dovik mcp")
 	case "gh":

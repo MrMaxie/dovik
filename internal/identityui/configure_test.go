@@ -20,6 +20,24 @@ func TestCanceledQuestionnaireCannotSave(t *testing.T) {
 	}
 }
 
+func TestProxyLevelSummaryOmitsIsolationPermissions(t *testing.T) {
+	project := identity.Project{Name: "Project", Repository: "owner/repo", Mode: "proxy-level"}
+	persona := identity.Persona{Name: "Personal", Account: "maxie", Host: "github.com"}
+	summary := configurationSummary(project, persona, []string{"read", "merge"}, false)
+	if strings.Contains(summary, "Allowed:") || requiresIsolationPolicy(project.Mode) {
+		t.Fatalf("proxy summary exposed isolation permissions: %q", summary)
+	}
+}
+
+func TestAgentIsolationSummaryIncludesPermissions(t *testing.T) {
+	project := identity.Project{Name: "Project", Repository: "owner/repo", Mode: "agent-isolation"}
+	persona := identity.Persona{Name: "Work", Account: "work", Host: "github.com"}
+	summary := configurationSummary(project, persona, []string{"read", "review"}, true)
+	if !strings.Contains(summary, "Allowed: [read review]") || !requiresIsolationPolicy(project.Mode) {
+		t.Fatalf("isolation summary = %q", summary)
+	}
+}
+
 func TestProjectDetailsReuseConfiguredGHPath(t *testing.T) {
 	project := identity.Project{ID: "project", Name: "Project", Repository: "owner/repo"}
 	gh := `C:\scoop\shims\realgh.exe`

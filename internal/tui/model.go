@@ -31,6 +31,8 @@ type processKey struct {
 type processItem struct {
 	key     processKey
 	command string
+	state   supervision.ProcessState
+	known   bool
 }
 
 type outputLine struct {
@@ -81,15 +83,26 @@ const (
 	registryUnavailable
 )
 
+type workspaceTab uint8
+
+const (
+	workspaceProcesses workspaceTab = iota
+	workspacePersonas
+	workspaceProjects
+	workspaceTabCount
+)
+
 // Model is the terminal-independent TUI state machine.
 type Model struct {
 	identities         identity.Snapshot
 	identityError      string
 	identityLoading    bool
 	identitySelected   int
-	showIdentity       bool
-	configureRequested bool
-	configureRoot      string
+	personaSelected    int
+	activeWorkspace    workspaceTab
+	editor             *editorState
+	confirmation       *confirmationState
+	savingIdentity     bool
 	ctx                context.Context
 	client             operatorclient.Client
 	daemonLauncher     DaemonLauncher
@@ -114,6 +127,8 @@ type Model struct {
 	scroll             int
 	showHelp           bool
 	showDetail         bool
+	showOutput         bool
+	followOutput       bool
 	notice             string
 	diagnostic         string
 	presentation       presentation
@@ -131,6 +146,8 @@ func NewModelWithDaemonLauncher(ctx context.Context, client operatorclient.Clien
 		ctx:                ctx,
 		client:             client,
 		daemonLauncher:     launcher,
+		activeWorkspace:    workspaceProcesses,
+		identityLoading:    true,
 		daemonReadyTimeout: requestTimeout,
 		daemonRetryDelay:   100 * time.Millisecond,
 		loading:            true,
@@ -140,7 +157,7 @@ func NewModelWithDaemonLauncher(ctx context.Context, client operatorclient.Clien
 
 func (model Model) Init() tea.Cmd {
 	devLog("model.initialized")
-	return tea.Batch(model.loadRegistryCmd(), tickCmd())
+	return tea.Batch(model.loadRegistryCmd(), model.loadIdentityCmd(), tickCmd())
 }
 
 func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -152,14 +169,37 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err != nil {
 			model.identityError = message.err.Error()
 		}
+		model.identitySelected = min(model.identitySelected, max(0, len(model.identities.State.Projects)-1))
+		model.personaSelected = min(model.personaSelected, max(0, len(model.identities.State.Personas)-1))
+		return model, nil
+	case identitySavedMsg:
+		model.identityLoading = false
+		model.savingIdentity = false
+		if message.err != nil {
+			model.notice = message.err.Error()
+			return model, nil
+		}
+		model.identities = message.snapshot
+		model.identityError = ""
+		model.notice = "saved"
+		model.editor = nil
 		return model, nil
 	case tea.WindowSizeMsg:
 		model.width = message.Width
 		model.height = message.Height
 		devLog("terminal.size", "cols", message.Width, "rows", message.Height)
+		if model.editor != nil {
+			return model.updateEditor(message)
+		}
 		return model, nil
 	case tea.KeyPressMsg:
 		devLogKey(message.String())
+		if model.confirmation != nil {
+			return model.updateConfirmation(message.String())
+		}
+		if model.editor != nil {
+			return model.updateEditor(message)
+		}
 		return model.updateKey(message.String())
 	case registryLoadedMsg:
 		return model.applyRegistryLoaded(message)
@@ -221,53 +261,129 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return model, nil
 	case tickMsg:
 		commands := []tea.Cmd{tickCmd()}
-		if len(model.items) > 0 && !model.loading && !model.daemonStarting && model.registry != registryUnavailable && !model.refreshing && !model.pending {
+		allowRefresh := !model.showOutput || model.followOutput
+		if allowRefresh && len(model.items) > 0 && !model.loading && !model.daemonStarting && model.registry != registryUnavailable && !model.refreshing && !model.pending {
 			model.refreshing = true
 			commands = append(commands, model.refreshCmd())
 		}
 		return model, tea.Batch(commands...)
 	}
+	if model.editor != nil {
+		return model.updateEditor(message)
+	}
 	return model, nil
 }
 
 func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
-	if model.showIdentity {
+	if model.showOutput {
+		switch key {
+		case "esc", "q", "o":
+			model.showOutput = false
+			model.followOutput = false
+			model.scroll = 0
+			return model, nil
+		case "f":
+			model.followOutput = !model.followOutput
+			if model.followOutput {
+				model.scroll = 0
+				if !model.refreshing {
+					model.refreshing = true
+					return model, model.refreshCmd()
+				}
+			}
+			return model, nil
+		case "up":
+			model.followOutput = false
+			model.scroll = min(model.fullOutputMaxScroll(), model.scroll+1)
+			return model, nil
+		case "down":
+			model.scroll = max(0, model.scroll-1)
+			return model, nil
+		case "pgup":
+			model.followOutput = false
+			model.scroll = min(model.fullOutputMaxScroll(), model.scroll+model.fullOutputPageHeight())
+			return model, nil
+		case "pgdown":
+			model.scroll = max(0, model.scroll-model.fullOutputPageHeight())
+			return model, nil
+		case "home":
+			model.followOutput = false
+			model.scroll = model.fullOutputMaxScroll()
+			return model, nil
+		case "end":
+			model.scroll = 0
+			return model, nil
+		case "ctrl+c":
+			return model, tea.Quit
+		default:
+			return model, nil
+		}
+	}
+	switch key {
+	case "left":
+		return model.switchWorkspace(-1)
+	case "right":
+		return model.switchWorkspace(1)
+	case "q", "ctrl+c":
+		return model, tea.Quit
+	}
+
+	if model.activeWorkspace == workspaceProjects {
 		switch key {
 		case "esc":
-			model.showIdentity = false
+			model.activeWorkspace = workspaceProcesses
 			return model, nil
-		case "j", "down":
+		case "down":
 			model.identitySelected = min(model.identitySelected+1, max(0, len(model.identities.State.Projects)-1))
 			return model, nil
-		case "k", "up":
+		case "up":
 			model.identitySelected = max(0, model.identitySelected-1)
 			return model, nil
-		case "c":
+		case "enter":
 			if model.identityLoading || model.identityError != "" {
 				return model, nil
 			}
 			if model.pending || model.daemonStarting || model.registry == registryUnavailable {
 				return model, nil
 			}
-			model.configureRoot = "."
-			if len(model.identities.State.Projects) > 0 {
-				model.configureRoot = model.identities.State.Projects[min(model.identitySelected, len(model.identities.State.Projects)-1)].Root
-			}
-			model.configureRequested = true
-			return model, tea.Quit
+			return model.openProjectEditor()
+		case "l":
+			model.identityLoading = true
+			return model, model.loadIdentityCmd()
 		default:
-			if key != "i" && key != "q" && key != "ctrl+c" {
-				return model, nil
-			}
+			return model, nil
 		}
 	}
+
+	if model.activeWorkspace == workspacePersonas {
+		switch key {
+		case "esc":
+			model.activeWorkspace = workspaceProcesses
+			return model, nil
+		case "down":
+			model.personaSelected = min(model.personaSelected+1, max(0, len(model.identities.State.Personas)-1))
+			return model, nil
+		case "up":
+			model.personaSelected = max(0, model.personaSelected-1)
+			return model, nil
+		case "enter":
+			if model.identityLoading || model.identityError != "" || len(model.identities.State.Personas) == 0 {
+				return model, nil
+			}
+			return model.openPersonaEditor()
+		case "l":
+			model.identityLoading = true
+			return model, model.loadIdentityCmd()
+		default:
+			return model, nil
+		}
+	}
+
 	switch key {
 	case "i":
 		model.identityLoading = true
-		model.showIdentity = true
+		model.activeWorkspace = workspaceProjects
 		return model, model.loadIdentityCmd()
-	case "q", "ctrl+c":
-		return model, tea.Quit
 	case "?":
 		model.showHelp = !model.showHelp
 		return model, nil
@@ -276,14 +392,25 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 			model.showDetail = !model.showDetail
 		}
 		return model, nil
-	case "up", "k":
+	case "o":
+		if len(model.items) > 0 && model.registry != registryUnavailable {
+			model.showOutput = true
+			model.followOutput = false
+			model.scroll = 0
+		}
+		return model, nil
+	case "enter":
+		if !model.pending && !model.loading && model.registry != registryUnavailable && len(model.items) > 0 {
+			return model.openProcessEditor()
+		}
+	case "up":
 		if !model.pending && !model.loading && model.registry != registryUnavailable && model.selected > 0 {
 			model.selected--
 			model.resetSelection()
 			model.refreshing = true
 			return model, model.refreshCmd()
 		}
-	case "down", "j":
+	case "down":
 		if !model.pending && !model.loading && model.registry != registryUnavailable && model.selected+1 < len(model.items) {
 			model.selected++
 			model.resetSelection()
@@ -319,9 +446,27 @@ func (model Model) updateKey(key string) (tea.Model, tea.Cmd) {
 
 func devLogKey(key string) {
 	switch key {
-	case "q", "ctrl+c", "esc", "?", "d", "i", "c", "up", "k", "down", "j", "pgup", "pgdown", "l", "s", "x", "r":
+	case "q", "ctrl+c", "esc", "enter", "?", "d", "i", "o", "f", "left", "right", "up", "down", "pgup", "pgdown", "home", "end", "l", "s", "x", "r":
 		devLog("input.key", "key", key)
 	}
+}
+
+func (model Model) switchWorkspace(direction int) (tea.Model, tea.Cmd) {
+	order := []workspaceTab{workspacePersonas, workspaceProjects, workspaceProcesses}
+	current := 0
+	for index, workspace := range order {
+		if workspace == model.activeWorkspace {
+			current = index
+			break
+		}
+	}
+	next := (current + direction + len(order)) % len(order)
+	model.activeWorkspace = order[next]
+	if model.activeWorkspace == workspaceProcesses {
+		return model, nil
+	}
+	model.identityLoading = true
+	return model, model.loadIdentityCmd()
 }
 
 func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
@@ -346,15 +491,6 @@ func (model Model) beginAction(action string) (tea.Model, tea.Cmd) {
 }
 
 func (model Model) View() tea.View {
-	if model.showIdentity && model.width >= minimumWidth && model.height >= minimumHeight {
-		view := tea.NewView(model.identityView())
-		view.AltScreen = true
-		if model.presentation.colorEnabled {
-			view.BackgroundColor = lipgloss.Color(model.presentation.canvasColor)
-			view.ForegroundColor = lipgloss.Color(model.presentation.primaryColor)
-		}
-		return view
-	}
 	content := model.render()
 	view := tea.NewView(content)
 	view.AltScreen = true
@@ -369,7 +505,17 @@ func (model Model) render() string {
 	if model.width > 0 && model.height > 0 && (model.width < minimumWidth || model.height < minimumHeight) {
 		return model.renderSmallTerminal()
 	}
-	return model.renderWorkspace()
+	if model.confirmation != nil || model.editor != nil {
+		return model.renderEditorWorkspace()
+	}
+	switch model.activeWorkspace {
+	case workspaceProjects:
+		return model.identityView()
+	case workspacePersonas:
+		return model.personaView()
+	default:
+		return model.renderProcessWorkspace()
+	}
 }
 
 func (model *Model) resetSelection() {
@@ -394,6 +540,13 @@ func (model *Model) applyRuntime(runtimeState supervision.ProcessRuntime, exists
 	}
 	model.runtime = runtimeState
 	model.hasRuntime = exists
+	if model.selected >= 0 && model.selected < len(model.items) {
+		model.items[model.selected].known = true
+		model.items[model.selected].state = supervision.ProcessStateStopped
+		if exists {
+			model.items[model.selected].state = runtimeState.State
+		}
+	}
 }
 
 func (model *Model) appendEvents(events []supervision.OutputEvent) {
@@ -418,15 +571,18 @@ func (model Model) outputLines() []outputLine {
 		data = strings.TrimSuffix(data, "\n")
 		parts := strings.Split(data, "\n")
 		for _, part := range parts {
+			if part == "" {
+				continue
+			}
 			lines = append(lines, outputLine{stream: event.Stream, text: part})
 		}
 	}
 	return lines
 }
 
-func (model Model) visibleOutputLines() []outputLine {
+func (model Model) visibleOutputLines(limit int) []outputLine {
 	lines := model.outputLines()
-	height := model.pageHeight()
+	height := max(1, limit)
 	end := max(0, len(lines)-model.scroll)
 	start := max(0, end-height)
 	return lines[start:end]
@@ -436,12 +592,24 @@ func (model Model) pageHeight() int {
 	if model.height <= 0 || model.width <= 0 {
 		return 8
 	}
-	layout := model.workspaceLayout()
+	layout := model.processWorkspaceLayout()
 	reserved := 3
 	if model.truncated {
 		reserved++
 	}
 	return max(1, layout.outputHeight-reserved)
+}
+
+func (model Model) fullOutputPageHeight() int {
+	reserved := 6
+	if model.truncated {
+		reserved++
+	}
+	return max(1, model.processWorkspaceLayout().bodyHeight-reserved)
+}
+
+func (model Model) fullOutputMaxScroll() int {
+	return max(0, len(model.outputLines())-model.fullOutputPageHeight())
 }
 
 func (model Model) navigatorRange(capacity int) (int, int) {
@@ -501,9 +669,19 @@ func (model Model) loadRegistry(ctx context.Context) ([]processItem, error) {
 			return nil, err
 		}
 		for _, process := range processes {
+			runtimeState, exists, statusErr := model.client.Status(ctx, process.ProjectID, process.ID)
+			if statusErr != nil {
+				return nil, statusErr
+			}
+			state := supervision.ProcessStateStopped
+			if exists {
+				state = runtimeState.State
+			}
 			items = append(items, processItem{
 				key:     processKey{projectID: process.ProjectID, processID: process.ID},
 				command: formatCommand(process.Command, process.Arguments),
+				state:   state,
+				known:   true,
 			})
 		}
 	}

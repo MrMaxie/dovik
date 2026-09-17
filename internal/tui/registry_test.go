@@ -15,12 +15,12 @@ func TestRegistryFailureIsNotEmptyAndRetryRecovers(t *testing.T) {
 	client := &fakeClient{listErr: errors.New("private transport detail")}
 	model := NewModel(context.Background(), client)
 	model.presentation = newPresentation(false)
-	if view := model.View().Content; !strings.Contains(view, "Loading processes") || strings.Contains(view, "No processes registered") {
+	if view := model.View().Content; !strings.Contains(view, "loading processes") || strings.Contains(view, "no processes registered") {
 		t.Fatalf("initial state: %s", view)
 	}
 	failed, _ := updateModel(t, model, model.loadRegistryCmd()())
 	view := failed.View().Content
-	if !strings.Contains(view, "Process data is unavailable") || !strings.Contains(view, "[l] Retry") || strings.Contains(view, "Register") || strings.Contains(view, "private transport detail") {
+	if !strings.Contains(view, "process data is unavailable") || !strings.Contains(view, "l retry") || strings.Contains(view, "register") || strings.Contains(view, "private transport detail") {
 		t.Fatalf("failure state: %s", view)
 	}
 	details, _ := updateModel(t, failed, key("d"))
@@ -37,11 +37,11 @@ func TestRegistryFailureIsNotEmptyAndRetryRecovers(t *testing.T) {
 		t.Fatal("retry did not clear failure")
 	}
 	view = empty.View().Content
-	if !strings.Contains(view, "No processes registered") || strings.Contains(view, "[d]") || strings.Contains(view, "Select") || strings.Contains(view, "Output") {
+	if !strings.Contains(view, "processes (0/0)") || !strings.Contains(view, "no process definitions") || !strings.Contains(view, "no processes registered") || strings.Contains(view, "d details") || strings.Contains(view, "select") || strings.Contains(view, "output") {
 		t.Fatalf("empty state: %s", view)
 	}
 	help, _ := updateModel(t, empty, key("?"))
-	for _, text := range []string{"dovik project add --id PROJECT --root", "dovik process add --project PROJECT --id PROCESS", "--command", "Replace PROJECT", "l to refresh"} {
+	for _, text := range []string{"dovik project add --id PROJECT --root", "dovik process add --project PROJECT --id PROCESS", "--command", "replace PROJECT", "l to refresh"} {
 		if !strings.Contains(help.View().Content, text) {
 			t.Fatalf("setup missing %q", text)
 		}
@@ -93,6 +93,13 @@ func TestStateLayoutsFitSupportedSizes(t *testing.T) {
 			resized, _ := updateModel(t, model, tea.WindowSizeMsg{Width: 40, Height: 10})
 			if !strings.Contains(resized.View().Content, "Terminal too small") {
 				t.Fatal("missing minimum guidance")
+			}
+		}
+		for _, tab := range []workspaceTab{workspaceProjects, workspacePersonas} {
+			model := Model{width: size[0], height: size[1], activeWorkspace: tab, registry: registryEmpty, presentation: newPresentation(false)}
+			view := model.View().Content
+			if lipgloss.Width(view) != size[0] || lipgloss.Height(view) != size[1] {
+				t.Fatalf("size %v tab %v: %dx%d", size, tab, lipgloss.Width(view), lipgloss.Height(view))
 			}
 		}
 	}

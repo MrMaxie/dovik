@@ -27,13 +27,40 @@ func TestSecretFilterAcrossWrites(t *testing.T) {
 	}
 }
 
+func TestCommandEnvironmentExposesOnlyResolvedGitDirectory(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+	git, err = filepath.Abs(git)
+	if err != nil {
+		t.Fatal(err)
+	}
+	git, err = filepath.EvalSymlinks(git)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var path string
+	for _, entry := range commandEnvironment(t.TempDir(), Persona{Host: "github.com"}, "token") {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && strings.EqualFold(key, "PATH") {
+			path = value
+			break
+		}
+	}
+	if path != filepath.Dir(git) {
+		t.Fatalf("PATH = %q, want only resolved git directory %q", path, filepath.Dir(git))
+	}
+}
+
 func TestExecutorUsesPrivateEnvironmentAndPreservesExit(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "fake.go")
 	binary := filepath.Join(dir, "original-gh.exe")
 	program := `package main
-import("fmt";"os")
-func main(){ a:=os.Args[1:]; if a[0]=="auth" { fmt.Print("private-fixture-token");return }; if a[0]=="api" { fmt.Print("example");return }; if os.Getenv("GH_TOKEN")!="private-fixture-token" || os.Getenv("GH_DEBUG")!="" || os.Getenv("GITHUB_TOKEN")!="" { os.Exit(90) };fmt.Print("out\x00bytes");fmt.Fprint(os.Stderr,"err");os.Exit(7) }`
+import("fmt";"os";"os/exec")
+func main(){ a:=os.Args[1:]; if a[0]=="auth" { fmt.Print("private-fixture-token");return }; if a[0]=="api" { fmt.Print("example");return }; if os.Getenv("GH_TOKEN")!="private-fixture-token" || os.Getenv("GH_DEBUG")!="" || os.Getenv("GITHUB_TOKEN")!="" { os.Exit(90) }; if _,err:=exec.LookPath("git");err!=nil { fmt.Fprint(os.Stderr,err);os.Exit(91) };fmt.Print("out\x00bytes");fmt.Fprint(os.Stderr,"err");os.Exit(7) }`
 	if err := os.WriteFile(source, []byte(program), 0600); err != nil {
 		t.Fatal(err)
 	}

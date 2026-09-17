@@ -3,25 +3,30 @@ package identityui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/MrMaxie/dovik/internal/identity"
 	"github.com/MrMaxie/dovik/internal/operatorclient"
 	"github.com/MrMaxie/dovik/internal/supervision"
 	"github.com/MrMaxie/dovik/internal/terminalstyle"
-	"github.com/charmbracelet/x/term"
 )
 
 func Configure(ctx context.Context, client operatorclient.Client, root string, input io.Reader, output io.Writer) error {
+	err := configure(ctx, client, root, input, output)
+	if errors.Is(err, huh.ErrUserAborted) {
+		return nil
+	}
+	return err
+}
+
+func configure(ctx context.Context, client operatorclient.Client, root string, input io.Reader, output io.Writer) error {
 	root, err := identity.GitRoot(ctx, root)
 	if err != nil {
 		return err
@@ -30,7 +35,15 @@ func Configure(ctx context.Context, client operatorclient.Client, root string, i
 	if err != nil {
 		return err
 	}
-	project := identity.Project{ID: filepath.Base(root), Name: filepath.Base(root), Root: root, Mode: "proxy-level", ProxyEnabled: true, Alternatives: []string{}}
+	project := identity.Project{
+		ID:           filepath.Base(root),
+		Name:         filepath.Base(root),
+		Root:         root,
+		Mode:         "proxy-level",
+		ProxyEnabled: true,
+		Alternatives: []string{},
+		Policy:       identity.Policy{Preset: "read-only", Exceptions: map[string]bool{}},
+	}
 	if existing, e := snapshot.State.FindProject("", root); e == nil {
 		project = existing
 	}
@@ -46,22 +59,7 @@ func Configure(ctx context.Context, client operatorclient.Client, root string, i
 		}
 	}
 	form := func(fields ...huh.Field) error {
-		width, height := questionnaireSize(output)
-		questionnaire := huh.NewForm(
-			huh.NewGroup(fields...).Title(questionnaireTitle()),
-		).
-			WithTheme(dovikTheme(width)).
-			WithInput(input).
-			WithOutput(output).
-			WithViewHook(func(view tea.View) tea.View {
-				view.BackgroundColor = lipgloss.Color(terminalstyle.CanvasColor)
-				view.ForegroundColor = lipgloss.Color(terminalstyle.PrimaryColor)
-				return view
-			})
-		if width > 0 && height > 0 {
-			questionnaire.WithWidth(width).WithHeight(height)
-		}
-		return questionnaire.RunWithContext(ctx)
+		return terminalstyle.NewForm("Configure project identity", input, output, fields...).RunWithContext(ctx)
 	}
 	fields := projectDetailsFields(&project, &gh, snapshot.State.GHPath == "")
 	if err := form(fields...); err != nil {
@@ -115,39 +113,52 @@ func Configure(ctx context.Context, client operatorclient.Client, root string, i
 	}
 	project.Persona = persona.ID
 	applyGit := false
-	if err := form(huh.NewConfirm().Title("Set this persona as the repository-local Git author?").Description(persona.GitName+" <"+persona.GitEmail+">").Value(&applyGit),
-		huh.NewSelect[string]().Title("Agent protection").Options(huh.NewOption("Proxy-level: govern calls through gh", "proxy-level"), huh.NewOption("Agent isolation: require a container or separate account", "agent-isolation")).Value(&project.Mode),
-		huh.NewSelect[string]().Title("Choose the agent's starting permissions").Options(huh.NewOption("Read only", "read-only"), huh.NewOption("Collaborate on issues and pull requests", "collaborate"), huh.NewOption("Maintain this repository", "maintain")).Value(&project.Policy.Preset),
+	if err := form(
+		huh.NewConfirm().Title("Set this persona as the repository-local Git author?").Description(persona.GitName+" <"+persona.GitEmail+">").Value(&applyGit),
+		huh.NewSelect[string]().Title("Agent protection").Options(
+			huh.NewOption("Proxy-level: transparently route the selected persona", "proxy-level"),
+			huh.NewOption("Agent isolation: enforce policy in a container or separate account", "agent-isolation"),
+		).Value(&project.Mode),
 	); err != nil {
 		return err
 	}
 	allowed := []string{}
-	project.Policy.Exceptions = nil
-	permissionOptions := []huh.Option[string]{}
-	labels := map[string]string{"read": "Read repository, issues, PRs and Actions", "comment": "Post comments", "create": "Create issues and PRs", "edit": "Edit issues and PRs; mark PR ready", "close": "Close and reopen issues and PRs", "review": "Submit PR reviews", "merge": "Merge PRs", "actions": "Run workflows, rerun or cancel Actions", "persona": "Select an approved alternative persona"}
-	for _, permission := range identity.Permissions {
-		permissionOptions = append(permissionOptions, huh.NewOption(labels[permission], permission))
-		if project.Policy.Allows(permission) {
-			allowed = append(allowed, permission)
+	if requiresIsolationPolicy(project.Mode) {
+		if err := form(
+			huh.NewSelect[string]().Title("Choose the agent's starting permissions").Options(
+				huh.NewOption("Read only", "read-only"),
+				huh.NewOption("Collaborate on issues and pull requests", "collaborate"),
+				huh.NewOption("Maintain this repository", "maintain"),
+			).Value(&project.Policy.Preset),
+		); err != nil {
+			return err
 		}
-	}
-	if err := form(huh.NewMultiSelect[string]().Title("What may the agent do?").Description("Unchecked operations are denied. Credential export and policy administration are never granted.").Options(permissionOptions...).Value(&allowed)); err != nil {
-		return err
-	}
-	project.Policy.Exceptions = map[string]bool{}
-	for _, permission := range identity.Permissions {
-		project.Policy.Exceptions[permission] = slices.Contains(allowed, permission)
-	}
-	if slices.Contains(allowed, "persona") {
-		alternatives := []huh.Option[string]{}
-		for _, p := range snapshot.State.Personas {
-			if p.ID != persona.ID && p.Host == persona.Host {
-				alternatives = append(alternatives, huh.NewOption(p.Name, p.ID))
+		permissionOptions := []huh.Option[string]{}
+		labels := map[string]string{"read": "Read repository, issues, PRs and Actions", "comment": "Post comments", "create": "Create issues and PRs", "edit": "Edit issues and PRs; mark PR ready", "close": "Close and reopen issues and PRs", "review": "Submit PR reviews", "merge": "Merge PRs", "actions": "Run workflows, rerun or cancel Actions", "persona": "Select an approved alternative persona"}
+		for _, permission := range identity.Permissions {
+			permissionOptions = append(permissionOptions, huh.NewOption(labels[permission], permission))
+			if project.Policy.Allows(permission) {
+				allowed = append(allowed, permission)
 			}
 		}
-		if len(alternatives) > 0 {
-			if err := form(huh.NewMultiSelect[string]().Title("Which other personas may the agent select?").Options(alternatives...).Value(&project.Alternatives)); err != nil {
-				return err
+		if err := form(huh.NewMultiSelect[string]().Title("What may the agent do?").Description("Unchecked operations are denied. Credential export and policy administration are never granted.").Options(permissionOptions...).Value(&allowed)); err != nil {
+			return err
+		}
+		project.Policy.Exceptions = map[string]bool{}
+		for _, permission := range identity.Permissions {
+			project.Policy.Exceptions[permission] = slices.Contains(allowed, permission)
+		}
+		if slices.Contains(allowed, "persona") {
+			alternatives := []huh.Option[string]{}
+			for _, p := range snapshot.State.Personas {
+				if p.ID != persona.ID && p.Host == persona.Host {
+					alternatives = append(alternatives, huh.NewOption(p.Name, p.ID))
+				}
+			}
+			if len(alternatives) > 0 {
+				if err := form(huh.NewMultiSelect[string]().Title("Which other personas may the agent select?").Options(alternatives...).Value(&project.Alternatives)); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -165,7 +176,7 @@ func Configure(ctx context.Context, client operatorclient.Client, root string, i
 			}
 		}
 	}
-	summary := fmt.Sprintf("%s\n%s\n%s/%s\nPersona: %s (%s)\nProtection: %s\nAllowed: %v\nRoute this repository's Git credentials through gh: yes\nUpdate local Git author: %t", project.Name, project.Description, persona.Host, project.Repository, persona.Name, persona.Account, project.Mode, allowed, applyGit)
+	summary := configurationSummary(project, persona, allowed, applyGit)
 	if err := form(huh.NewConfirm().Title("Save this project configuration?").Description(summary).Value(&confirmed)); err != nil {
 		return err
 	}
@@ -189,16 +200,16 @@ func Configure(ctx context.Context, client operatorclient.Client, root string, i
 	return nil
 }
 
-func questionnaireSize(output io.Writer) (int, int) {
-	outputFile, ok := output.(*os.File)
-	if !ok || !term.IsTerminal(outputFile.Fd()) {
-		return 0, 0
+func requiresIsolationPolicy(mode string) bool {
+	return mode == "agent-isolation"
+}
+
+func configurationSummary(project identity.Project, persona identity.Persona, allowed []string, applyGit bool) string {
+	summary := fmt.Sprintf("%s\n%s\n%s/%s\nPersona: %s (%s)\nProtection: %s", project.Name, project.Description, persona.Host, project.Repository, persona.Name, persona.Account, project.Mode)
+	if requiresIsolationPolicy(project.Mode) {
+		summary += fmt.Sprintf("\nAllowed: %v", allowed)
 	}
-	width, height, err := term.GetSize(outputFile.Fd())
-	if err != nil {
-		return 0, 0
-	}
-	return max(1, width-1), max(1, height-1)
+	return summary + fmt.Sprintf("\nRoute this repository's Git credentials through gh: yes\nUpdate local Git author: %t", applyGit)
 }
 
 func projectDetailsFields(project *identity.Project, gh *string, requestGHPath bool) []huh.Field {

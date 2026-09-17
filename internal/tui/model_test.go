@@ -3,13 +3,17 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/MrMaxie/dovik/internal/identity"
 	"github.com/MrMaxie/dovik/internal/supervision"
+	"github.com/MrMaxie/dovik/internal/terminalstyle"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type fakeClient struct {
@@ -96,10 +100,13 @@ func TestModelLoadsStatusAndAttributedOutput(t *testing.T) {
 	}
 	refreshed, _ := updateModel(t, loaded, command())
 	view := refreshed.View().Content
-	for _, expected := range []string{"project / api", "[RUNNING]", "Command  server", "[stdout] ready", "[stderr] warning", "Older output is unavailable"} {
+	for _, expected := range []string{"process", "api", "project", "[RUNNING]", "command", "server", "process output", "[stdout] ready", "[stderr] warning", "earlier lines were discarded; showing the newest output", "x stop • r restart"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("view missing %q:\n%s", expected, view)
 		}
+	}
+	if strings.Contains(view, "actions") || strings.Contains(view, "older output") {
+		t.Fatalf("view retained redundant or unclear output copy:\n%s", view)
 	}
 	if strings.Index(view, "[stdout] ready") > strings.Index(view, "[stderr] warning") {
 		t.Fatalf("output is not in sequence order:\n%s", view)
@@ -133,6 +140,34 @@ func TestModelIgnoresStaleRefreshAfterSelectionChange(t *testing.T) {
 	}
 }
 
+func TestProcessNavigationUsesArrowsAndEnterManagement(t *testing.T) {
+	model := NewModel(context.Background(), &fakeClient{})
+	model.loading = false
+	model.registry = registryPopulated
+	model.items = []processItem{
+		{key: processKey{projectID: "project", processID: "api"}},
+		{key: processKey{projectID: "project", processID: "worker"}},
+	}
+
+	unchanged, command := updateModel(t, model, key("j"))
+	if unchanged.selected != 0 || command != nil {
+		t.Fatal("j still changes process selection")
+	}
+	selected, _ := updateModel(t, unchanged, key("down"))
+	managed, command := updateModel(t, selected, key("enter"))
+	if managed.editor == nil || managed.editor.kind != editorProcess || selected.selectedKey().processID != "worker" || command == nil {
+		t.Fatal("enter did not manage selected process")
+	}
+	view := ansi.Strip(managed.View().Content)
+	if strings.Count(view, "manage process") != 1 || strings.Contains(view, "dovik process actions") || !strings.Contains(view, "┌") || !strings.Contains(view, "└") {
+		t.Fatalf("process form is not one clearly focused in-place form:\n%s", view)
+	}
+	cancelled, _ := updateModel(t, managed, key("esc"))
+	if cancelled.editor != nil {
+		t.Fatal("escape did not close the in-place process form")
+	}
+}
+
 func TestModelSerializesActionsAndKeepsDiagnosticsOnDemand(t *testing.T) {
 	process := processKey{projectID: "project", processID: "api"}
 	client := &fakeClient{
@@ -156,7 +191,7 @@ func TestModelSerializesActionsAndKeepsDiagnosticsOnDemand(t *testing.T) {
 		t.Fatalf("primary view exposed diagnostics or action count = %d:\n%s", client.starts, failed.View().Content)
 	}
 	detailed, _ := updateModel(t, failed, key("d"))
-	if !strings.Contains(detailed.View().Content, "Diagnostic  raw transport detail") {
+	if !strings.Contains(detailed.View().Content, "diagnostic  raw transport detail") {
 		t.Fatalf("details did not expose diagnostic on demand:\n%s", detailed.View().Content)
 	}
 	refreshed, _ := updateModel(t, failed, refreshMsg{
@@ -179,7 +214,7 @@ func TestModelStartsUnavailableDaemonAndWaitsForProtocolReadiness(t *testing.T) 
 	model.presentation = newPresentation(false)
 	model.width, model.height = 100, 30
 	unavailable, _ := updateModel(t, model, model.loadRegistryCmd()())
-	if view := unavailable.View().Content; !strings.Contains(view, "Press s to start the daemon") || !strings.Contains(view, "[s] Start daemon") {
+	if view := unavailable.View().Content; !strings.Contains(view, "Press s to start the daemon") || !strings.Contains(view, "s start daemon") {
 		t.Fatalf("unavailable view omitted daemon start action:\n%s", view)
 	}
 	pending, command := updateModel(t, unavailable, key("s"))
@@ -288,8 +323,17 @@ func updateModel(t *testing.T, model Model, message tea.Msg) (Model, tea.Cmd) {
 }
 
 func key(value string) tea.KeyPressMsg {
-	if value == "down" {
+	switch value {
+	case "down":
 		return tea.KeyPressMsg(tea.Key{Code: tea.KeyDown})
+	case "up":
+		return tea.KeyPressMsg(tea.Key{Code: tea.KeyUp})
+	case "left":
+		return tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft})
+	case "right":
+		return tea.KeyPressMsg(tea.Key{Code: tea.KeyRight})
+	case "enter":
+		return tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
 	}
 	return tea.KeyPressMsg(tea.Key{Code: rune(value[0]), Text: value})
 }
@@ -303,7 +347,7 @@ func TestFormatTime(t *testing.T) {
 
 func TestPresentationUsesWideAndCompactWorkspaces(t *testing.T) {
 	model := Model{
-		items:        []processItem{{key: processKey{projectID: "dovik", processID: "api"}, command: "go run ./cmd/api --dev"}},
+		items:        []processItem{{key: processKey{projectID: "dovik", processID: "api"}, command: "go run ./cmd/api --dev", known: true, state: supervision.ProcessStateRunning}},
 		statusKnown:  true,
 		hasRuntime:   true,
 		runtime:      supervision.ProcessRuntime{State: supervision.ProcessStateRunning},
@@ -313,14 +357,14 @@ func TestPresentationUsesWideAndCompactWorkspaces(t *testing.T) {
 	model.width, model.height = 120, 34
 	wide := model.View().Content
 	wideHeader := strings.Split(wide, "\n")[1]
-	if lipgloss.Width(wide) != 120 || lipgloss.Height(wide) != 34 || strings.Count(wideHeader, "│") != 1 || !strings.Contains(wide, "dovik / api") {
+	if lipgloss.Width(wide) != 120 || lipgloss.Height(wide) != 34 || strings.Count(wideHeader, "│") != 1 || !strings.Contains(wide, "process") || !strings.Contains(wide, "api") || strings.Contains(wide, "dovik / api") {
 		t.Fatalf("wide workspace dimensions = %dx%d:\n%s", lipgloss.Width(wide), lipgloss.Height(wide), wide)
 	}
 
 	model.width, model.height = 80, 24
 	compact := model.View().Content
 	compactLines := strings.Split(compact, "\n")
-	if lipgloss.Width(compact) != 80 || lipgloss.Height(compact) != 24 || strings.Contains(compactLines[1], "┌") || !strings.Contains(compact, "Command  go run ./cmd/api --dev") {
+	if lipgloss.Width(compact) != 80 || lipgloss.Height(compact) != 24 || strings.Contains(compactLines[1], "┌") || !strings.Contains(compact, "command") || !strings.Contains(compact, "go run ./cmd/api --dev") {
 		t.Fatalf("compact workspace dimensions = %dx%d:\n%s", lipgloss.Width(compact), lipgloss.Height(compact), compact)
 	}
 }
@@ -329,7 +373,7 @@ func TestPresentationKeepsMeaningWithoutColor(t *testing.T) {
 	model := Model{
 		width:        100,
 		height:       30,
-		items:        []processItem{{key: processKey{projectID: "project", processID: "api"}, command: "server"}},
+		items:        []processItem{{key: processKey{projectID: "project", processID: "api"}, command: "server", known: true, state: supervision.ProcessStateFailed}},
 		statusKnown:  true,
 		hasRuntime:   true,
 		runtime:      supervision.ProcessRuntime{State: supervision.ProcessStateFailed},
@@ -347,7 +391,7 @@ func TestPresentationKeepsMeaningWithoutColor(t *testing.T) {
 	if strings.Contains(view, "\x1b[") {
 		t.Fatalf("color-disabled presentation emitted ANSI styling: %q", view)
 	}
-	for _, expected := range []string{"> project / api", "[FAILED]", "Restart did not complete", "[stdout] ready", "[stderr] failed", "Older output is unavailable"} {
+	for _, expected := range []string{"› └─ ○ api", "[FAILED]", "Restart did not complete", "[stdout] ready", "[stderr] failed", "earlier lines were discarded; showing the newest output"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("color-disabled view missing %q:\n%s", expected, view)
 		}
@@ -361,6 +405,33 @@ func TestPresentationStylesLifecycleStatesSemantically(t *testing.T) {
 	pending := p.renderState(string(supervision.ProcessStateStarting))
 	if running == failed || failed == pending || !strings.Contains(running, "RUNNING") || !strings.Contains(failed, "FAILED") || !strings.Contains(pending, "STARTING") {
 		t.Fatalf("state styles are not semantically distinct: running=%q failed=%q pending=%q", running, failed, pending)
+	}
+}
+
+func TestFieldValuesUseAConsistentIndent(t *testing.T) {
+	p := newPresentation(false)
+	if got := p.renderField("project", "dovik"); got != "project\n  dovik" {
+		t.Fatalf("stacked field = %q, want an indented value", got)
+	}
+}
+
+func TestSelectedRunningProcessRowKeepsContinuousSelectionStyle(t *testing.T) {
+	p := newPresentation(true)
+	model := Model{
+		items: []processItem{
+			{key: processKey{projectID: "dovik", processID: "idle"}, known: true, state: supervision.ProcessStateStopped},
+			{key: processKey{projectID: "dovik", processID: "worker"}, known: true, state: supervision.ProcessStateRunning},
+		},
+		selected: 1,
+	}
+	const width = 32
+	rows := p.renderProcessTree(model, width, 8)
+	prefix := "› └─ "
+	marker := p.selected.Foreground(lipgloss.Color(p.successColor)).Render("●")
+	suffixWidth := width - lipgloss.Width(prefix) - 1
+	want := p.selected.Render(prefix) + marker + p.selected.Width(suffixWidth).MaxWidth(suffixWidth).Render(" worker")
+	if got := rows[2]; got != want {
+		t.Fatalf("selected running row resets its selection style after the marker:\n got %q\nwant %q", got, want)
 	}
 }
 
@@ -380,7 +451,7 @@ func TestPresentationKeepsRuntimeDiagnosticsBehindDetails(t *testing.T) {
 	}
 	model.showDetail = true
 	view := model.View().Content
-	if !strings.Contains(view, "Runtime details") || !strings.Contains(view, "PID  4242") || !strings.Contains(view, "Instance  instance") {
+	if !strings.Contains(view, "runtime details") || !strings.Contains(view, "pid  4242") || !strings.Contains(view, "instance  instance") {
 		t.Fatalf("details view omitted runtime diagnostics:\n%s", view)
 	}
 }
@@ -430,12 +501,41 @@ func TestFormatCommandQuotesArgumentsWithSpaces(t *testing.T) {
 func TestPresentationShortcutBarReflectsOpenPanel(t *testing.T) {
 	model := Model{presentation: newPresentation(false)}
 	model.showDetail = true
-	if got := model.presentation.renderShortcutBar(model, 80); !strings.Contains(got, "[d] Close details") {
+	if got := model.presentation.renderShortcutBar(model, 80); !strings.Contains(got, "d close details") {
 		t.Fatalf("details shortcut did not describe the active action: %q", got)
 	}
 	model.showHelp = true
-	if got := model.presentation.renderShortcutBar(model, 80); !strings.Contains(got, "[?] Close help") {
+	if got := model.presentation.renderShortcutBar(model, 80); !strings.Contains(got, "? close help") {
 		t.Fatalf("help shortcut did not describe the active action: %q", got)
+	}
+}
+
+func TestShortcutBarGroupsArrowPairsAndUsesSharedSeparator(t *testing.T) {
+	model := Model{
+		items:        []processItem{{key: processKey{projectID: "project", processID: "api"}}, {key: processKey{projectID: "project", processID: "worker"}}},
+		registry:     registryPopulated,
+		statusKnown:  true,
+		presentation: newPresentation(false),
+	}
+	bar := model.presentation.renderShortcutBar(model, 120)
+	if !strings.Contains(bar, "↑ ↓ move") || !strings.Contains(bar, "← → tabs") || strings.Contains(bar, "↑ up") || strings.Contains(bar, "↓ down") || strings.Contains(bar, "/") {
+		t.Fatalf("shortcut grammar is inconsistent: %q", bar)
+	}
+
+	colored := newPresentation(true)
+	want := lipgloss.NewStyle().Foreground(lipgloss.Color(terminalstyle.BorderColor)).Background(lipgloss.Color(terminalstyle.SurfaceColor)).Render(" • ")
+	if got := colored.footerSeparator(); got != want {
+		t.Fatalf("footer separator = %q, want border-colored shared-background separator %q", got, want)
+	}
+
+	compactOutput := model.presentation.renderOutputShortcutBar(model, 80)
+	for _, expected := range []string{"esc close", "f follow", "↑ ↓ scroll", "pgup pgdn page", "home top", "end bottom"} {
+		if !strings.Contains(compactOutput, expected) {
+			t.Fatalf("compact output footer missing %q: %q", expected, compactOutput)
+		}
+	}
+	if lipgloss.Width(compactOutput) != 80 {
+		t.Fatalf("compact output footer width = %d, want 80", lipgloss.Width(compactOutput))
 	}
 }
 
@@ -464,6 +564,96 @@ func TestPresentationShowsDaemonDetectionInTUIHeader(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPresentationOrdersCountedTabsAndGroupsProcessesByProject(t *testing.T) {
+	model := Model{
+		width: 100, height: 30, registry: registryPopulated, statusKnown: true,
+		items: []processItem{
+			{key: processKey{projectID: "dovik", processID: "api"}, known: true, state: supervision.ProcessStateRunning},
+			{key: processKey{projectID: "dovik", processID: "idle-preview"}, known: true, state: supervision.ProcessStateStopped},
+			{key: processKey{projectID: "other", processID: "worker"}, known: true, state: supervision.ProcessStateRunning},
+		},
+		identities:   identitySnapshot(2, 3),
+		presentation: newPresentation(false),
+	}
+	view := model.View().Content
+	header := strings.Split(view, "\n")[0]
+	personas := strings.Index(header, "personas (2)")
+	projects := strings.Index(header, "projects (3)")
+	processes := strings.Index(header, "processes (2/3)")
+	if personas < 0 || projects <= personas || processes <= projects {
+		t.Fatalf("workspace dependency order or counts are wrong: %q", header)
+	}
+	for _, expected := range []string{" dovik", "› ├─ ● api", "  └─ ○ idle-preview", " other", "  └─ ● worker"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("grouped navigator missing %q:\n%s", expected, view)
+		}
+	}
+	if strings.Contains(view, "dovik / idle-preview") || strings.Contains(view, "1/3") {
+		t.Fatalf("navigator repeated flat identity or position counter:\n%s", view)
+	}
+}
+
+func TestProcessPreviewUsesNewestLinesAndFullOutputStaysInPlace(t *testing.T) {
+	events := make([]supervision.OutputEvent, 0, 30)
+	for index := 1; index <= 30; index++ {
+		events = append(events, supervision.OutputEvent{Sequence: uint64(index), Stream: supervision.OutputStreamStdout, Data: []byte(fmt.Sprintf("line-%d\n", index))})
+	}
+	model := Model{
+		width: 100, height: 30, registry: registryPopulated, statusKnown: true,
+		items:  []processItem{{key: processKey{projectID: "dovik", processID: "api"}}},
+		events: events, presentation: newPresentation(false),
+	}
+	preview := model.View().Content
+	if strings.Contains(preview, "line-1\n") || !strings.Contains(preview, "line-30") || strings.Count(preview, "[stdout] line-") <= 6 {
+		t.Fatalf("preview did not use its available height for the newest output:\n%s", preview)
+	}
+	opened, _ := updateModel(t, model, key("o"))
+	full := opened.View().Content
+	if !opened.showOutput || !strings.Contains(full, "retained output - no shell") || !strings.Contains(full, "process") || !strings.Contains(full, "api") || !strings.Contains(full, "project") || !strings.Contains(full, "dovik") || strings.Contains(full, "dovik / api") || !strings.Contains(full, "line-30") || !strings.Contains(full, "esc close") {
+		t.Fatalf("full output did not open in place:\n%s", full)
+	}
+	top, _ := updateModel(t, opened, key("home"))
+	if !strings.Contains(top.View().Content, "line-1") {
+		t.Fatalf("full output could not scroll to the earliest retained line:\n%s", top.View().Content)
+	}
+	following, command := updateModel(t, opened, key("f"))
+	if !following.followOutput || command == nil || !strings.Contains(following.View().Content, "following") {
+		t.Fatalf("full output follow mode did not start: %#v", following)
+	}
+	closed, _ := updateModel(t, following, key("esc"))
+	if closed.showOutput || closed.followOutput {
+		t.Fatal("full output did not close cleanly")
+	}
+}
+
+func TestProcessOutputPreservesSafeColorAndRemovesUnsafeControls(t *testing.T) {
+	model := Model{
+		width: 100, height: 30, registry: registryPopulated, statusKnown: true,
+		items:        []processItem{{key: processKey{projectID: "dovik", processID: "api"}}},
+		events:       []supervision.OutputEvent{{Sequence: 1, Stream: supervision.OutputStreamStdout, Data: []byte("\x1b[31mred\x1b[0m\x1b[2J\x1b]0;owned\x07\n")}},
+		presentation: newPresentation(true),
+	}
+	view := model.View().Content
+	if !strings.Contains(view, "\x1b[31mred\x1b[0m") || strings.Contains(view, "[2J") || strings.Contains(view, "owned") {
+		t.Fatalf("output ANSI filtering is wrong: %q", view)
+	}
+	model.presentation = newPresentation(false)
+	if plain := model.View().Content; strings.Contains(plain, "\x1b[") || !strings.Contains(plain, "red") {
+		t.Fatalf("color-disabled output retained ANSI or lost text: %q", plain)
+	}
+}
+
+func identitySnapshot(personas, projects int) identity.Snapshot {
+	snapshot := identity.Snapshot{}
+	for index := 0; index < personas; index++ {
+		snapshot.State.Personas = append(snapshot.State.Personas, identity.Persona{ID: fmt.Sprint(index)})
+	}
+	for index := 0; index < projects; index++ {
+		snapshot.State.Projects = append(snapshot.State.Projects, identity.Project{ID: fmt.Sprint(index)})
+	}
+	return snapshot
 }
 
 func TestPresentationColorsOnlyDaemonStatusBullet(t *testing.T) {

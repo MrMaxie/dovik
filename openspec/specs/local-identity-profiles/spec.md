@@ -18,22 +18,45 @@ The daemon SHALL own versioned, atomically persisted persona metadata and projec
 
 ### Requirement: Account-specific governed gh execution
 
-Dovik SHALL provide a gh proxy and `dovik gh -- ...`, validate supported commands and flags against the current project policy, and execute the original gh outside untrusted checkouts. Credentials SHALL remain inside the trusted execution boundary, and each invocation SHALL select its account without switching global authentication state.
+Dovik SHALL provide a transparent `gh` proxy and `dovik gh -- ...` for ordinary proxy-level project terminals. Every ordinary invocation SHALL execute the original GitHub CLI with the configured project persona without switching global authentication state. Dovik SHALL preserve exact arguments, standard streams, terminal interaction, and exit codes, and SHALL pass through commands unknown to Dovik. GitHub CLI authentication mutation and direct token export SHALL remain unavailable through a configured project proxy. Explicit native and container agent-isolation sessions SHALL continue to validate supported commands and flags against the current project policy. Credentials SHALL remain inside the trusted execution boundary.
 
-#### Scenario: Execute an allowed operation
-- **WHEN** a configured caller requests a supported operation permitted by the project policy
+#### Scenario: Execute an ordinary GitHub CLI command
+
+- **WHEN** a configured proxy-level caller invokes a GitHub CLI command that does not mutate authentication or disclose credentials
+- **THEN** the proxy starts the original GitHub CLI in the caller's terminal with the configured persona
+- **AND** forwards the exact arguments, input, output, and exit code
+- **AND** does not require the command or its flags to appear in a Dovik catalogue
+
+#### Scenario: Execute a future or user-installed command
+
+- **WHEN** an ordinary proxy-level caller invokes a command, alias, or extension unknown to the installed Dovik version
+- **THEN** the proxy delegates the invocation unchanged to the original GitHub CLI with the configured persona
+- **AND** GitHub CLI determines whether the invocation is valid
+
+#### Scenario: Inspect authentication
+
+- **WHEN** an ordinary proxy-level caller runs `gh auth status` without a credential-disclosure flag
+- **THEN** the original GitHub CLI reports the configured persona's authentication status normally
+- **AND** Dovik does not reject the command as an unknown policy operation
+
+#### Scenario: Attempt authentication mutation or direct token export
+
+- **WHEN** an ordinary configured caller requests token export, login, logout, refresh, account switching, setup-git, or authentication status with token disclosure
+- **THEN** the proxy rejects the invocation before acquiring or exposing a credential
+- **AND** global GitHub CLI authentication state remains unchanged
+
+#### Scenario: Execute a governed isolated operation
+
+- **WHEN** a native or container agent session requests a supported operation permitted by the project policy
 - **THEN** the executor verifies the repository and account, forwards the original output and exit code, and performs no automatic mutation retry
 
-#### Scenario: Create a pull request interactively
-- **WHEN** an operator runs `gh pr create` without non-interactive title and body flags from a proxy-level project terminal
-- **THEN** Dovik starts the original GitHub CLI in that terminal with the configured persona and repository
-- **AND** the original prompts, input, output, and exit code remain unchanged
+#### Scenario: Attempt an isolated-session escape
 
-#### Scenario: Attempt an escape
-- **WHEN** an agent requests token export, authentication changes, unrecognized flags, another repository, an editor, alias, extension, arbitrary GraphQL, or an unrecognized REST operation
+- **WHEN** an isolated agent requests token export, authentication changes, unrecognized flags, another repository, an editor, alias, extension, arbitrary GraphQL, or an unrecognized REST operation
 - **THEN** the executor rejects the request before acquiring credentials or starting gh
 
 #### Scenario: Use Git over HTTPS in a proxy-level project
+
 - **WHEN** an operator configures a proxy-level project and Git requests credentials through the repository-local `gh auth git-credential` helper
 - **THEN** Dovik validates the Git credential protocol, host, and optional repository path before returning the configured persona's credential to Git
 - **AND** direct token export, other hosts, other repositories, and isolated sessions remain denied
@@ -57,9 +80,23 @@ Proxy-level SHALL be the default and SHALL describe its same-user bypass limitat
 
 ### Requirement: Consistent operator surfaces and platform evidence
 
-CLI and TUI SHALL expose persona, project context, policy, and session state without secrets. The questionnaire SHALL support presets and explicit operation exceptions. Native Windows, Linux, macOS, Docker, and Podman verification SHALL be reported separately; compilation alone SHALL NOT establish isolation support.
+CLI and TUI SHALL expose persona, project context, policy, and session state without secrets. The interactive questionnaire SHALL use the established Dovik terminal palette, SHALL describe proxy-level as transparent persona routing, and SHALL request policy presets, explicit operation exceptions, and alternative personas only when agent-isolation is selected. Native Windows, Linux, macOS, Docker, and Podman verification SHALL be reported separately; compilation alone SHALL NOT establish isolation support.
 
-#### Scenario: Use gh without configured project identity
-- **WHEN** a caller invokes gh from a repository without approved project intent
-- **THEN** the proxy delegates the invocation unchanged to the original GitHub CLI with its normal authentication and output
-- **AND** it does not prompt for a persona, policy, or project configuration
+#### Scenario: Configure transparent proxy-level routing
+
+- **WHEN** an operator configures a project in proxy-level mode
+- **THEN** the questionnaire selects the persona and optional repository-local Git author
+- **AND** does not present isolated-agent policy or permission questions
+- **AND** preserves an existing stored policy for later isolation use
+
+#### Scenario: Configure agent isolation
+
+- **WHEN** an operator selects agent-isolation
+- **THEN** the questionnaire requests the starting preset, explicit permission choices, and any permitted alternative personas
+- **AND** includes those isolation controls in the confirmation summary
+
+#### Scenario: Use consistent terminal presentation
+
+- **WHEN** the root operator menu or identity questionnaire is rendered
+- **THEN** both use the shared Dovik terminal palette and interaction styling
+- **AND** do not introduce a parallel visual theme

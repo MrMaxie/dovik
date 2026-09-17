@@ -15,7 +15,7 @@ Environment override values are accepted only when defining a process and are om
 
 ## GitHub credentials
 
-The governed executor obtains credentials only after validating the repository, account, command, flags, and policy. Tokens do not enter process arguments, RPC results, state files, or diagnostics. Dovik never changes the globally active GitHub account.
+The ordinary proxy obtains the configured project credential through a bounded helper operation and gives it only to the original GitHub CLI child environment. It preserves the full GitHub CLI command surface except GitHub CLI authentication mutation and direct token export. Native and container agent-isolation sessions additionally validate repository, command, flags, and policy through the governed executor. Tokens do not enter process arguments, state files, or diagnostics. Dovik never changes the globally active GitHub account. User-installed aliases and extensions run with the operator's own privileges and remain outside the proxy-level security boundary.
 
 ## Boundaries
 

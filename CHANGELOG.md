@@ -4,6 +4,25 @@ All notable changes to Dovik are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Dovik follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Open a guided operator menu with bare `dovik`, or use `dovik whoami` for a bounded shell-prompt status of the selected project persona.
+- Inspect and follow retained process output from the TUI or `dovik process logs --follow`, including after a process has stopped.
+
+### Changed
+
+- Keep counted Personas, Projects, and Processes tabs visible, group process rows by project, separate process fields from contextual lifecycle actions, list every project permission state, and edit entities in a focused in-place form with explicit confirmation.
+- Use arrow keys for TUI selection, `l` for refresh, and Enter as the primary action for processes, project identities, and personas.
+- Keep proxy-level project setup focused on transparent persona routing, and ask policy and permission questions only for isolated agent sessions.
+- Keep process previews focused on recent output while preserving safe terminal colors and offering a full scrollable viewer.
+
+### Fixed
+
+- Pass ordinary configured `gh` commands, aliases, extensions, and future GitHub CLI commands through with the selected project persona instead of rejecting operations missing from Dovik's isolated-session catalogue.
+- Preserve strict command and policy validation inside native and container agent-isolation sessions, while blocking authentication mutation and direct token export in configured project terminals.
+
 ## [1.0.0] - 2026-09-15
 
 ### Added
@@ -27,3 +46,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Build release artifacts from allowlisted inputs, publish SHA-256 checksums and attestations, and verify packages outside the source checkout.
 
 [1.0.0]: https://github.com/MrMaxie/dovik/releases/tag/v1.0.0
+[Unreleased]: https://github.com/MrMaxie/dovik/compare/v1.0.0...HEAD

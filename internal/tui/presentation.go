@@ -12,10 +12,12 @@ import (
 )
 
 const (
-	wideWidth         = 96
-	wideHeight        = 24
-	headerHeight      = 1
-	shortcutBarHeight = 1
+	wideWidth              = 96
+	wideHeight             = 24
+	headerHeight           = 1
+	shortcutBarHeight      = 1
+	processActionBarHeight = 1
+	truncatedOutputMessage = "earlier lines were discarded; showing the newest output"
 )
 
 type workspaceLayout struct {
@@ -47,6 +49,11 @@ type presentation struct {
 	stderr         lipgloss.Style
 	key            lipgloss.Style
 	border         lipgloss.Style
+	fieldLabel     lipgloss.Style
+	fieldValue     lipgloss.Style
+	footerText     lipgloss.Style
+	footerKey      lipgloss.Style
+	footerDot      lipgloss.Style
 	canvasColor    string
 	surfaceColor   string
 	primaryColor   string
@@ -94,6 +101,11 @@ func newPresentation(colorEnabled bool) presentation {
 		stderr:         lipgloss.NewStyle(),
 		key:            lipgloss.NewStyle(),
 		border:         lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()),
+		fieldLabel:     lipgloss.NewStyle(),
+		fieldValue:     lipgloss.NewStyle(),
+		footerText:     lipgloss.NewStyle(),
+		footerKey:      lipgloss.NewStyle(),
+		footerDot:      lipgloss.NewStyle(),
 	}
 	if !colorEnabled {
 		return p
@@ -116,6 +128,30 @@ func newPresentation(colorEnabled bool) presentation {
 	p.stderr = p.stderr.Foreground(lipgloss.Color(danger))
 	p.key = p.key.Bold(true).Foreground(lipgloss.Color(accent))
 	p.border = p.border.BorderForeground(lipgloss.Color(border)).Foreground(lipgloss.Color(primary))
+	p.fieldLabel = p.fieldLabel.Foreground(lipgloss.Color(muted))
+	p.fieldValue = p.fieldValue.Foreground(lipgloss.Color(primary))
+	p.footerText = p.footerText.Foreground(lipgloss.Color(muted)).Background(lipgloss.Color(surface))
+	p.footerKey = p.footerKey.Bold(true).Foreground(lipgloss.Color(accent)).Background(lipgloss.Color(surface))
+	p.footerDot = p.footerDot.Foreground(lipgloss.Color(border)).Background(lipgloss.Color(surface))
+	return p
+}
+
+func (p presentation) dimmed() presentation {
+	if !p.colorEnabled {
+		return p
+	}
+	muted := lipgloss.Color(p.mutedColor)
+	surface := lipgloss.Color(p.surfaceColor)
+	p.section = p.section.Foreground(muted).Faint(true)
+	p.project = p.project.Foreground(muted).Faint(true)
+	p.selected = p.selected.Foreground(muted).Background(surface).Faint(true)
+	p.primary = p.primary.Foreground(muted).Faint(true)
+	p.command = p.command.Foreground(muted).Faint(true)
+	p.success = p.success.Foreground(muted).Background(surface).Faint(true)
+	p.attention = p.attention.Foreground(muted).Background(surface).Faint(true)
+	p.danger = p.danger.Foreground(muted).Background(surface).Faint(true)
+	p.stateMuted = p.stateMuted.Foreground(muted).Background(surface).Faint(true)
+	p.border = p.border.BorderForeground(lipgloss.Color(terminalstyle.BorderColor)).Foreground(muted).Faint(true)
 	return p
 }
 
@@ -125,11 +161,23 @@ func colorEnabledFromEnvironment() bool {
 }
 
 func (model Model) workspaceLayout() workspaceLayout {
+	return model.workspaceLayoutWithFooter(shortcutBarHeight)
+}
+
+func (model Model) processWorkspaceLayout() workspaceLayout {
+	footerHeight := shortcutBarHeight
+	if len(model.items) > 0 && model.registry != registryUnavailable {
+		footerHeight += processActionBarHeight
+	}
+	return model.workspaceLayoutWithFooter(footerHeight)
+}
+
+func (model Model) workspaceLayoutWithFooter(footerHeight int) workspaceLayout {
 	width, height := model.viewportSize()
-	bodyHeight := max(1, height-headerHeight-shortcutBarHeight)
+	bodyHeight := max(1, height-headerHeight-footerHeight)
 	if width >= wideWidth && height >= wideHeight {
 		navigatorWidth := max(28, min(36, width/3))
-		summaryHeight := 5
+		summaryHeight := min(12, max(11, bodyHeight/3))
 		return workspaceLayout{
 			wide:            true,
 			bodyHeight:      bodyHeight,
@@ -143,7 +191,7 @@ func (model Model) workspaceLayout() workspaceLayout {
 	}
 
 	navigatorHeight := max(4, min(7, height/4))
-	summaryHeight := 5
+	summaryHeight := min(10, max(9, bodyHeight/3))
 	return workspaceLayout{
 		bodyHeight:      bodyHeight,
 		navigatorWidth:  width,
@@ -151,30 +199,93 @@ func (model Model) workspaceLayout() workspaceLayout {
 		summaryWidth:    width,
 		summaryHeight:   summaryHeight,
 		outputWidth:     width,
-		outputHeight:    max(3, bodyHeight-navigatorHeight-summaryHeight),
+		outputHeight:    max(2, bodyHeight-navigatorHeight-summaryHeight),
 	}
 }
 
-func (model Model) renderWorkspace() string {
+func (model Model) renderProcessWorkspace() string {
 	p := model.presentation
 	width, _ := model.viewportSize()
-	layout := model.workspaceLayout()
+	layout := model.processWorkspaceLayout()
 	header := p.renderHeader(model, width)
-	if len(model.items) == 0 {
-		return lipgloss.JoinVertical(lipgloss.Left, header, p.renderRegistryState(model, width, layout.bodyHeight), p.renderShortcutBar(model, width))
+	if model.showOutput && len(model.items) > 0 {
+		body := p.renderFullOutput(model, width, layout.bodyHeight)
+		footer := p.renderOutputShortcutBar(model, width)
+		return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 	}
 	navigator := p.renderNavigator(model, layout.navigatorWidth, layout.navigatorHeight)
-	summary := p.renderSummary(model, layout.summaryWidth, layout.summaryHeight)
-	output := p.renderWorkArea(model, layout.outputWidth, layout.outputHeight)
-	workArea := lipgloss.JoinVertical(lipgloss.Left, summary, output)
+	bodyHeight := layout.bodyHeight
+	if !layout.wide {
+		bodyHeight = max(1, layout.bodyHeight-layout.navigatorHeight)
+	}
+	workArea := p.renderRegistryState(model, layout.summaryWidth, bodyHeight)
+	if len(model.items) > 0 {
+		summary := p.renderSummary(model, layout.summaryWidth, layout.summaryHeight)
+		output := p.renderWorkArea(model, layout.outputWidth, layout.outputHeight)
+		workArea = lipgloss.JoinVertical(lipgloss.Left, summary, output)
+	}
 	body := workArea
 	if layout.wide {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, navigator, workArea)
 	} else {
 		body = lipgloss.JoinVertical(lipgloss.Left, navigator, workArea)
 	}
-	footer := p.renderShortcutBar(model, width)
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	footerRows := []string{}
+	if len(model.items) > 0 && model.registry != registryUnavailable {
+		footerRows = append(footerRows, p.renderProcessActionBar(model, width))
+	}
+	footerRows = append(footerRows, p.renderShortcutBar(model, width))
+	return lipgloss.JoinVertical(lipgloss.Left, header, body, strings.Join(footerRows, "\n"))
+}
+
+func (p presentation) renderFullOutput(model Model, width, height int) string {
+	item := model.items[model.selected]
+	mode := "paused"
+	if model.followOutput {
+		mode = "following"
+	}
+	lines := []string{
+		p.renderInlineField("process", string(item.key.processID)),
+		p.renderInlineField("project", string(item.key.projectID)),
+		p.renderInlineField("viewer", mode),
+		p.muted.Render("retained output - no shell"),
+		"",
+	}
+	if model.truncated {
+		lines = append(lines, p.muted.Render(truncatedOutputMessage))
+	}
+	output := model.outputLines()
+	pageHeight := max(1, height-len(lines)-1)
+	end := max(0, len(output)-model.scroll)
+	start := max(0, end-pageHeight)
+	for _, line := range output[start:end] {
+		prefix := p.stdout.Render("[stdout]")
+		if line.stream == supervision.OutputStreamStderr {
+			prefix = p.stderr.Render("[stderr]")
+		}
+		lines = append(lines, prefix+" "+terminalstyle.RenderOutput(line.text, p.colorEnabled))
+	}
+	if len(output) == 0 {
+		lines = append(lines, p.muted.Render("no output yet."))
+	}
+	return p.border.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
+		Padding(1, 2, 0).Width(width).Height(height).Render(p.fitLines(lines, max(1, width-4), max(1, height-1)))
+}
+
+func (p presentation) renderOutputShortcutBar(model Model, width int) string {
+	follow := "follow"
+	if model.followOutput {
+		follow = "pause"
+	}
+	hints := []string{
+		p.renderFooterKey("esc", "close"),
+		p.renderFooterKey("f", follow),
+		p.renderFooterKey("↑ ↓", "scroll"),
+		p.renderFooterKey("pgup pgdn", "page"),
+		p.renderFooterKey("home", "top"),
+		p.renderFooterKey("end", "bottom"),
+	}
+	return p.renderFooter(width, hints)
 }
 
 func (model Model) viewportSize() (int, int) {
@@ -189,24 +300,47 @@ func (model Model) viewportSize() (int, int) {
 }
 
 func (p presentation) renderHeader(model Model, width int) string {
-	return p.renderHeaderTitle(model, width, "Local processes")
-}
-
-func (p presentation) renderHeaderTitle(model Model, width int, title string) string {
 	brandStyle := p.brand
-	titleStyle := p.muted
 	if p.colorEnabled {
 		background := lipgloss.Color(p.surfaceColor)
 		brandStyle = brandStyle.Background(background)
-		titleStyle = titleStyle.Background(background)
 	}
 	brand := brandStyle.Render(" dovik ")
-	title = titleStyle.Render(" " + title)
+	tabs := p.renderWorkspaceTabs(model)
 	status := p.renderDaemonIndicator(model)
 	leftWidth := max(0, width-lipgloss.Width(status)-1)
-	left := ansi.Truncate(brand+title, leftWidth, "")
+	left := ansi.Truncate(brand+" "+tabs, leftWidth, "")
 	spacing := p.header.Render(strings.Repeat(" ", max(1, width-lipgloss.Width(left)-lipgloss.Width(status))))
 	return p.header.Width(width).MaxWidth(width).Render(ansi.Truncate(left+spacing+status, width, ""))
+}
+
+func (p presentation) renderWorkspaceTabs(model Model) string {
+	tabs := []struct {
+		label string
+		value workspaceTab
+	}{
+		{label: fmt.Sprintf("personas (%d)", len(model.identities.State.Personas)), value: workspacePersonas},
+		{label: fmt.Sprintf("projects (%d)", len(model.identities.State.Projects)), value: workspaceProjects},
+		{label: fmt.Sprintf("processes (%d/%d)", model.runningProcessCount(), len(model.items)), value: workspaceProcesses},
+	}
+	rendered := make([]string, 0, len(tabs))
+	for _, tab := range tabs {
+		label := " " + tab.label + " "
+		if tab.value == model.activeWorkspace {
+			if p.colorEnabled {
+				rendered = append(rendered, p.selected.Render(label))
+			} else {
+				rendered = append(rendered, "["+tab.label+"]")
+			}
+			continue
+		}
+		style := p.muted
+		if p.colorEnabled {
+			style = style.Background(lipgloss.Color(p.surfaceColor))
+		}
+		rendered = append(rendered, style.Render(label))
+	}
+	return strings.Join(rendered, " ")
 }
 
 func (p presentation) renderDaemonIndicator(model Model) string {
@@ -235,32 +369,97 @@ func (p presentation) renderDaemonIndicator(model Model) string {
 }
 
 func (p presentation) renderNavigator(model Model, width, height int) string {
-	capacity := max(1, height-3)
-	position := ""
-	if len(model.items) > 0 {
-		position = fmt.Sprintf("  %d/%d", model.selected+1, len(model.items))
-	}
-	lines := []string{p.section.Render("Processes") + p.muted.Render(position)}
+	capacity := max(1, height-1)
+	lines := []string{}
 	switch {
 	case model.loading:
-		lines = append(lines, p.muted.Render("Loading registered processes..."))
+		lines = append(lines, p.muted.Render("loading registered processes..."))
+	case model.registry == registryUnavailable:
+		lines = append(lines, p.muted.Render("process list unavailable."))
 	case len(model.items) == 0:
-		lines = append(lines, p.muted.Render("No process definitions."))
+		lines = append(lines, p.muted.Render("no process definitions."))
 	default:
-		start, end := model.navigatorRange(capacity)
-		for index := start; index < end; index++ {
-			item := model.items[index]
-			label := fmt.Sprintf("  %s / %s", item.key.projectID, item.key.processID)
-			if index == model.selected {
-				label = fmt.Sprintf("> %s / %s", item.key.projectID, item.key.processID)
-				lines = append(lines, p.selected.Width(max(1, width-2)).MaxWidth(max(1, width-2)).Render(label))
-				continue
-			}
-			lines = append(lines, ansi.Truncate(p.project.Render(label), width-2, "..."))
+		lines = p.renderProcessTree(model, width-2, capacity)
+	}
+	style := p.border.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(model.processWorkspaceLayout().wide)
+	return style.Width(width).Height(height).Render(p.fitLines(lines, width-2, height))
+}
+
+func (model Model) runningProcessCount() int {
+	running := 0
+	for _, item := range model.items {
+		if item.known && item.state == supervision.ProcessStateRunning {
+			running++
 		}
 	}
-	style := p.border.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(model.workspaceLayout().wide)
-	return style.Width(width).Height(height).Render(p.fitLines(lines, width-2, height))
+	return running
+}
+
+func (p presentation) renderProcessTree(model Model, width, capacity int) []string {
+	start, end := model.navigatorRange(max(1, capacity/2))
+	projects := map[supervision.ProjectID][]int{}
+	order := make([]supervision.ProjectID, 0)
+	for index, item := range model.items {
+		if _, exists := projects[item.key.projectID]; !exists {
+			order = append(order, item.key.projectID)
+		}
+		projects[item.key.projectID] = append(projects[item.key.projectID], index)
+	}
+	lines := make([]string, 0, capacity)
+	for _, projectID := range order {
+		indices := projects[projectID]
+		visible := false
+		for _, index := range indices {
+			if index >= start && index < end {
+				visible = true
+				break
+			}
+		}
+		if !visible {
+			continue
+		}
+		lines = append(lines, p.section.Render(" "+string(projectID)))
+		for childIndex, index := range indices {
+			if index < start || index >= end {
+				continue
+			}
+			branch := "├─"
+			if childIndex == len(indices)-1 {
+				branch = "└─"
+			}
+			lines = append(lines, p.renderProcessRow(model.items[index], branch, index == model.selected, width))
+			if len(lines) >= capacity {
+				return lines
+			}
+		}
+	}
+	return lines
+}
+
+func (p presentation) renderProcessRow(item processItem, branch string, selected bool, width int) string {
+	selector := " "
+	style := p.project
+	if selected {
+		selector = "›"
+		style = p.selected
+	}
+	prefix := selector + " " + branch + " "
+	marker := "○"
+	markerStyle := style
+	if item.known && item.state.IsActive() {
+		marker = "●"
+		if p.colorEnabled {
+			markerStyle = markerStyle.Foreground(lipgloss.Color(p.successColor))
+		}
+	}
+	suffix := " " + string(item.key.processID)
+	if !selected {
+		return ansi.Truncate(style.Render(prefix)+markerStyle.Render(marker)+style.Render(suffix), width, "...")
+	}
+
+	suffixWidth := max(0, width-lipgloss.Width(prefix)-lipgloss.Width(marker))
+	suffix = ansi.Truncate(suffix, suffixWidth, "")
+	return style.Render(prefix) + markerStyle.Render(marker) + style.Width(suffixWidth).MaxWidth(suffixWidth).Render(suffix)
 }
 
 func (p presentation) renderSummary(model Model, width, height int) string {
@@ -274,39 +473,79 @@ func (p presentation) renderSummary(model Model, width, height int) string {
 	if model.registry == registryUnavailable || (!model.statusKnown && model.diagnostic != "") {
 		state = "unavailable"
 	}
-	identity := p.primary.Bold(p.colorEnabled).Render(fmt.Sprintf("%s / %s", item.key.projectID, item.key.processID)) + "  " + p.renderState(state)
-	lines = append(lines, identity)
-	lines = append(lines, ansi.Truncate(p.muted.Render("Command  ")+p.command.Render(item.command), width-2, "..."))
+	lines = append(lines,
+		p.renderField("process", string(item.key.processID)),
+		p.renderField("project", string(item.key.projectID)),
+		p.fieldLabel.Render("status"),
+		"  "+p.renderState(state),
+		p.renderField("command", item.command),
+	)
 	if model.loading {
-		lines = append(lines, p.muted.Render("Refreshing process list..."))
+		lines = append(lines, p.muted.Render("refreshing process list..."))
 	} else if model.notice != "" {
 		style := p.attention
 		if model.diagnostic != "" {
 			style = p.danger
 		}
 		lines = append(lines, style.Render(model.notice))
-	} else {
-		lines = append(lines, p.renderActions(model))
 	}
 	return lipgloss.NewStyle().Padding(1, 1, 0).Width(width).Height(height).Render(p.fitLines(lines, width-2, height-1))
 }
 
-func (p presentation) renderActions(model Model) string {
-	prefix := p.muted.Render("Action   ")
+func (p presentation) renderProcessActionBar(model Model, width int) string {
+	actions := []string{}
 	if model.pending {
-		return prefix + p.attention.Render("PENDING")
+		actions = append(actions, p.attention.Render("working..."))
+		return p.renderActionFooter(width, actions)
 	}
 	if !model.statusKnown || model.registry == registryUnavailable || model.loading {
-		return prefix + p.muted.Render("Unavailable")
+		return p.renderActionFooter(width, actions)
 	}
 	if model.currentState().IsActive() {
-		return prefix + p.renderKey("x", "Stop") + "  " + p.renderKey("r", "Restart")
+		actions = append(actions, p.renderFooterKey("x", "stop"), p.renderFooterKey("r", "restart"))
+		return p.renderActionFooter(width, actions)
 	}
-	return prefix + p.renderKey("s", "Start")
+	actions = append(actions, p.renderFooterKey("s", "start"))
+	return p.renderActionFooter(width, actions)
 }
 
 func (p presentation) renderKey(key, action string) string {
-	return p.key.Render("["+key+"]") + " " + action
+	return p.key.Render(key) + " " + p.muted.Render(strings.ToLower(action))
+}
+
+func (p presentation) hintSeparator() string {
+	if !p.colorEnabled {
+		return "  •  "
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(terminalstyle.BorderColor)).Render("  •  ")
+}
+
+func (p presentation) renderField(label, value string) string {
+	return p.fieldLabel.Render(label) + "\n" + p.fieldValue.Render("  "+value)
+}
+
+func (p presentation) renderFooterKey(key, action string) string {
+	if !p.colorEnabled {
+		return key + " " + strings.ToLower(action)
+	}
+	return p.footerKey.Render(key) + p.footerText.Render(" "+strings.ToLower(action))
+}
+
+func (p presentation) footerSeparator() string {
+	if !p.colorEnabled {
+		return " • "
+	}
+	return p.footerDot.Render(" • ")
+}
+
+func (p presentation) renderFooter(width int, hints []string) string {
+	content := " " + strings.Join(hints, p.footerSeparator())
+	return p.header.Width(width).MaxWidth(width).Render(ansi.Truncate(content, width, ""))
+}
+
+func (p presentation) renderActionFooter(width int, actions []string) string {
+	content := " " + strings.Join(actions, p.footerSeparator())
+	return lipgloss.NewStyle().Width(width).MaxWidth(width).Render(ansi.Truncate(content, max(1, width), ""))
 }
 
 func (p presentation) renderState(state string) string {
@@ -333,17 +572,17 @@ func (p presentation) renderWorkArea(model Model, width, height int) string {
 	if model.showDetail {
 		return p.panel(width, height, p.detailLines(model))
 	}
-	return p.panel(width, height, p.outputLines(model))
+	return p.panel(width, height, p.outputLines(model, max(1, height-1)))
 }
 
-func (p presentation) outputLines(model Model) []string {
-	lines := []string{p.section.Render("Output")}
+func (p presentation) outputLines(model Model, height int) []string {
+	lines := []string{p.renderOutputHeading()}
 	if model.truncated {
-		lines = append(lines, p.attention.Render("[Older output is unavailable]"))
+		lines = append(lines, p.muted.Render(truncatedOutputMessage))
 	}
-	visible := model.visibleOutputLines()
+	visible := model.visibleOutputLines(max(1, height-len(lines)))
 	if len(visible) == 0 {
-		lines = append(lines, p.muted.Render("No output yet."))
+		lines = append(lines, p.muted.Render("no output yet."))
 		return lines
 	}
 	for _, line := range visible {
@@ -351,18 +590,25 @@ func (p presentation) outputLines(model Model) []string {
 		if line.stream == supervision.OutputStreamStderr {
 			prefix = p.stderr.Render("[stderr]")
 		}
-		lines = append(lines, prefix+" "+line.text)
+		lines = append(lines, prefix+" "+terminalstyle.RenderOutput(line.text, p.colorEnabled))
 	}
 	return lines
 }
 
+func (p presentation) renderOutputHeading() string {
+	if !p.colorEnabled {
+		return "process output"
+	}
+	return p.section.Foreground(lipgloss.Color(terminalstyle.AccentColor)).Render("process output")
+}
+
 func (p presentation) detailLines(model Model) []string {
-	lines := []string{p.section.Render("Runtime details")}
+	lines := []string{p.section.Render("runtime details")}
 	if model.diagnostic != "" {
-		lines = append(lines, p.danger.Render("Diagnostic  ")+model.diagnostic)
+		lines = append(lines, p.danger.Render("diagnostic  ")+model.diagnostic)
 	}
 	if !model.hasRuntime {
-		return append(lines, p.muted.Render("No runtime has started."))
+		return append(lines, p.muted.Render("no runtime has started."))
 	}
 	pid := "-"
 	if model.runtime.PID != nil {
@@ -373,61 +619,61 @@ func (p presentation) detailLines(model Model) []string {
 		exitCode = fmt.Sprint(*model.runtime.ExitCode)
 	}
 	lines = append(lines,
-		fmt.Sprintf("Instance  %s    PID  %s", model.runtime.InstanceID, pid),
-		fmt.Sprintf("Started   %s", formatTime(model.runtime.StartedAt)),
-		fmt.Sprintf("Ended     %s    Exit  %s    Reason  %s", formatTime(model.runtime.FinishedAt), exitCode, emptyAsDash(model.runtime.TerminationReason)),
+		fmt.Sprintf("instance  %s    pid  %s", model.runtime.InstanceID, pid),
+		fmt.Sprintf("started   %s", formatTime(model.runtime.StartedAt)),
+		fmt.Sprintf("ended     %s    exit  %s    reason  %s", formatTime(model.runtime.FinishedAt), exitCode, emptyAsDash(model.runtime.TerminationReason)),
 	)
 	return lines
 }
 
 func (p presentation) helpLines() []string {
 	return []string{
-		p.section.Render("Keyboard help"),
-		p.key.Render("up/down, j/k") + "  Select process",
-		p.key.Render("s / x / r") + "    Start / stop / restart",
-		p.key.Render("PgUp/PgDn") + "    Scroll output",
-		p.key.Render("i") + "            Project identity and configuration",
-		p.key.Render("l / d / ? / q") + " Refresh / details / close help / quit",
+		p.section.Render("keyboard help"),
+		p.renderKey("← →", "switch workspace"),
+		p.renderKey("↑ ↓", "move selection"),
+		p.renderKey("enter", "manage selected process"),
+		p.renderKey("s", "start") + p.hintSeparator() + p.renderKey("x", "stop") + p.hintSeparator() + p.renderKey("r", "restart"),
+		p.renderKey("pgup", "page up") + p.hintSeparator() + p.renderKey("pgdn", "page down"),
+		p.renderKey("l", "refresh") + p.hintSeparator() + p.renderKey("d", "details") + p.hintSeparator() + p.renderKey("?", "close help") + p.hintSeparator() + p.renderKey("q", "quit"),
 	}
 }
 
 func (p presentation) renderShortcutBar(model Model, width int) string {
 	shortcuts := []string{}
 	if len(model.items) > 1 && !model.pending && !model.loading && model.registry != registryUnavailable {
-		shortcuts = append(shortcuts, p.renderKey("j/k", "Select"))
+		shortcuts = append(shortcuts, p.renderFooterKey("↑ ↓", "move"))
+	}
+	if len(model.items) > 0 && !model.pending && !model.loading && model.registry != registryUnavailable {
+		shortcuts = append(shortcuts, p.renderFooterKey("enter", "manage"))
+	}
+	if len(model.items) > 0 && model.registry != registryUnavailable {
+		shortcuts = append(shortcuts, p.renderFooterKey("o", "output"))
 	}
 	if !model.pending && !model.loading && !model.daemonStarting {
 		if model.registry == registryUnavailable && model.daemonLauncher != nil {
-			shortcuts = append(shortcuts, p.renderKey("s", "Start daemon"))
+			shortcuts = append(shortcuts, p.renderFooterKey("s", "start daemon"))
 		}
-		label := "Refresh"
+		label := "refresh"
 		if model.registry == registryUnavailable || (!model.statusKnown && model.diagnostic != "") {
-			label = "Retry"
+			label = "retry"
 		}
-		shortcuts = append(shortcuts, p.renderKey("l", label))
+		shortcuts = append(shortcuts, p.renderFooterKey("l", label))
 	}
-	if len(model.items) > 0 || model.diagnostic != "" || model.showDetail {
-		label := "Details"
-		if model.showDetail && !model.showHelp {
-			label = "Close details"
-			if width < 80 {
-				label = "Close"
-			}
-		}
-		shortcuts = append(shortcuts, p.renderKey("d", label))
-	}
-	label := "Help"
-	if len(model.items) == 0 && model.registry == registryEmpty {
-		label = "Setup help"
+	shortcuts = append(shortcuts, p.renderFooterKey("← →", "tabs"))
+	if model.showDetail {
+		shortcuts = append(shortcuts, p.renderFooterKey("d", "close details"))
+	} else if model.diagnostic != "" {
+		shortcuts = append(shortcuts, p.renderFooterKey("d", "details"))
 	}
 	if model.showHelp {
-		label = "Close help"
-		if width < 80 {
-			label = "Close"
-		}
+		shortcuts = append(shortcuts, p.renderFooterKey("?", "close help"))
+	} else if model.registry == registryEmpty {
+		shortcuts = append(shortcuts, p.renderFooterKey("?", "setup help"))
+	} else if width >= 120 {
+		shortcuts = append(shortcuts, p.renderFooterKey("?", "help"))
 	}
-	shortcuts = append(shortcuts, p.renderKey("i", "Identity"), p.renderKey("?", label), p.renderKey("q", "Quit"))
-	return p.header.Width(width).MaxWidth(width).Render(ansi.Truncate(" "+strings.Join(shortcuts, "  "), width, ""))
+	shortcuts = append(shortcuts, p.renderFooterKey("q", "quit"))
+	return p.renderFooter(width, shortcuts)
 }
 
 func (p presentation) fitLines(lines []string, width, height int) string {
@@ -455,12 +701,12 @@ func (p presentation) renderRegistryState(model Model, width, height int) string
 	lines := []string{}
 	switch model.registry {
 	case registryLoading:
-		lines = append(lines, p.section.Render("Loading processes..."), "", p.muted.Render("Waiting for the daemon."))
+		lines = append(lines, p.section.Render("loading processes..."), "", p.muted.Render("waiting for the daemon."))
 	case registryUnavailable:
-		lines = append(lines, p.section.Render("Process data is unavailable"), "")
+		lines = append(lines, p.section.Render("process data is unavailable"), "")
 		switch {
 		case model.daemonStarting:
-			lines = append(lines, p.attention.Render("Starting daemon..."))
+			lines = append(lines, p.attention.Render("starting daemon..."))
 		case model.notice != "":
 			lines = append(lines, p.danger.Render(model.notice))
 		case model.daemonLauncher != nil:
@@ -469,7 +715,7 @@ func (p presentation) renderRegistryState(model Model, width, height int) string
 			lines = append(lines, "Check that the daemon is running, then press l to retry.")
 		}
 	case registryEmpty:
-		lines = append(lines, p.section.Render("No processes registered"), "", "Register a project and process using the CLI.", "Press ? for setup commands, then l to refresh.")
+		lines = append(lines, p.section.Render("no processes registered"), "", "register a project and process using the CLI.", "press ? for setup commands, then l to refresh.")
 	}
 	if model.showHelp {
 		if model.registry == registryEmpty {
@@ -489,16 +735,16 @@ func (p presentation) renderRegistryState(model Model, width, height int) string
 
 func (p presentation) setupLines() []string {
 	return []string{
-		p.section.Render("Register your first process"), "",
-		"Run these commands in another terminal:",
+		p.section.Render("register your first process"), "",
+		"run these commands in another terminal:",
 		`dovik project add --id PROJECT --root "ROOT"`,
 		`dovik process add --project PROJECT --id PROCESS`,
 		`  --command "COMMAND"`,
-		"The process command above is one line.", "",
-		"Replace PROJECT and PROCESS with your chosen IDs.",
+		"the process command above is one line.", "",
+		"replace PROJECT and PROCESS with your chosen IDs.",
 		"ROOT is an absolute folder; COMMAND is an executable.",
-		"Add --arg VALUE for each command argument.", "",
-		"Return here, press ? to close help, then l to refresh.",
+		"add --arg VALUE for each command argument.", "",
+		"return here, press ? to close help, then l to refresh.",
 	}
 }
 

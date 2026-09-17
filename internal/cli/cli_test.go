@@ -76,6 +76,54 @@ func TestCLIRegistryAndLifecycleCommands(t *testing.T) {
 	}
 }
 
+func TestCLIProcessLogsFollowWorksAfterProcessStops(t *testing.T) {
+	endpoint, stopServer := startCLITestServer(t)
+	defer stopServer()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	root := t.TempDir()
+
+	runCLI(t, ctx, endpoint, "project", "add", "--id", "project", "--root", root)
+	runCLI(t, ctx, endpoint,
+		"process", "add",
+		"--project", "project",
+		"--id", "api",
+		"--command", os.Args[0],
+		"--arg=-test.run=TestCLIHelperProcess",
+		"--env", cliHelperEnvironment+"=1",
+	)
+	runCLI(t, ctx, endpoint, "process", "start", "--project", "project", "--process", "api")
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if output := runCLI(t, ctx, endpoint, "process", "logs", "--project", "project", "--process", "api"); strings.Contains(output, "ready") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("helper output was not captured")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	runCLI(t, ctx, endpoint, "process", "stop", "--project", "project", "--process", "api")
+
+	followContext, stopFollow := context.WithTimeout(context.Background(), 450*time.Millisecond)
+	defer stopFollow()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(followContext, []string{"--endpoint", endpoint, "process", "logs", "--project", "project", "--process", "api", "--follow"}, &stdout, &stderr)
+	if code != 0 || stderr.Len() != 0 || strings.Count(stdout.String(), "ready") != 1 {
+		t.Fatalf("follow code = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestCLIRejectsJSONLogFollowing(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(context.Background(), []string{"--json", "process", "logs", "--project", "project", "--process", "api", "--follow"}, &stdout, &stderr)
+	if code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "does not support --json") {
+		t.Fatalf("code = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+	}
+}
+
 func TestCLIRejectsInvalidEnvironmentOverride(t *testing.T) {
 	endpoint, stopServer := startCLITestServer(t)
 	defer stopServer()

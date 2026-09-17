@@ -15,27 +15,44 @@ dovik --json process status --project storefront --process web
 
 Run `dovik <command> --help` without a daemon to inspect each command surface.
 
+Read a retained process tail once, or keep following later events without opening a shell:
+
+```console
+dovik process logs --project storefront --process web --tail 100
+dovik process logs --project storefront --process web --follow
+```
+
+Follow mode also works while a process is stopped. It prints retained output first, then waits for later sequence events until interrupted. `--follow` is intentionally unavailable with `--json`, because JSON mode emits one finite document.
+
+Run bare `dovik` in an interactive terminal for a short operator menu. Help is selected by default. Inside a Git repository the menu also offers identity configuration or editing; outside a repository that action is omitted. `Open TUI` enters the same workspace as `dovik tui`. Redirected bare invocations print help without contacting the daemon.
+
 ## TUI
 
-Open the interactive workspace with `dovik tui`. It shows registered processes, current or latest runtime state, and bounded output from the selected process.
+Open the interactive workspace with `dovik tui`. Its top row keeps `Personas`, `Projects`, and `Processes` visible in dependency order. Tabs include the current persona and project counts; Processes shows running processes over registered processes. Use left and right to switch workspaces, up and down to select an item, `l` to refresh, and Enter to open the selected entity's primary action.
+
+Processes groups selectable process rows under non-selectable project headings. Running processes keep a green marker even when selected; inactive processes use a hollow marker. Its body remains stable in loading, empty, unavailable, and populated states. With a selected process, process name, project, state, and wrapped command are separate fields with indented values. Applicable lifecycle actions appear in a contextual strip above the global shortcut bar. The visually distinct process-output section uses all available preview height for the newest real lines and explains when earlier lines were discarded. Press `o` for the full retained-output viewer, then `f` to follow later output in the same TUI. The viewer is log-only and never starts a shell.
 
 Common keys:
 
 | Key | Action |
 | --- | --- |
-| `Up`/`k`, `Down`/`j` | Select a process |
+| `Left`, `Right` | Switch between Personas, Projects, and Processes |
+| `Up`, `Down` | Select an item in the active workspace |
+| `Enter` | Manage the selected process, edit the selected project identity, or edit the selected persona |
 | `s` | Start an inactive process |
 | `x` | Stop an active process |
 | `r` | Restart an active process |
 | `l` | Reload registry and runtime state |
-| `i` | Open project identity |
+| `i` | Open project identity directly from Processes |
 | `Page Up`, `Page Down` | Scroll output |
+| `o` | Open the full retained-output viewer |
+| `f` | Follow or pause output in the full viewer |
 | `d` | Toggle runtime details |
 | `?` | Toggle expanded help |
 | `q`, `Ctrl+C` | Quit the client |
 
 On native Windows, the TUI can explicitly start a colocated daemon at the default endpoint when it is offline. Opening the TUI never starts a daemon automatically. Custom endpoints and Unix environments remain connection-only.
 
-The identity workspace shows the selected project's repository, persona, Git author, protection mode, sessions, and the count of enabled repository operations out of eight. Persona switching is shown separately. Press `c` there to open the configuration questionnaire for the selected project.
+Projects shows the selected repository, persona, Git author, protection mode, policy, sessions, and all eight repository operations. A filled marker means allowed and a hollow marker means blocked; the state is not repeated as text. Persona switching is shown separately. Press Enter to edit all applicable project fields in one navigable form. Personas lists saved personas and shows separate GitHub account, host, Git author, and assigned-project fields without displaying credentials; Enter opens its metadata editor. These editors stay inside the main TUI, subdue the underlying navigator, and use one focus frame instead of rendering another application header. Tab and Shift+Tab move between fields, Escape or Ctrl+C cancels, and saving always requires a separate confirmation modal.
 
 The TUI requires interactive input and output. Use the CLI or MCP when streams are redirected.

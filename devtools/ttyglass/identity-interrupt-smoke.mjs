@@ -89,14 +89,14 @@ try {
     if (!status || !['exited', 'failed', 'stopped'].includes(status.state)) {
       throw new Error('questionnaire did not exit after Ctrl+C');
     }
-    if (status.exitCode === 0) throw new Error('Ctrl+C unexpectedly completed the questionnaire');
+    if (status.exitCode !== 0) throw new Error(`Ctrl+C exited with code ${status.exitCode}`);
 
     const projects = JSON.parse((await dovikCommand(['--json', 'project', 'list'])).stdout);
     const identities = JSON.parse((await dovikCommand(['--json', 'identity', 'list'])).stdout);
     if (projects.length !== 0 || identities.state.projects.length !== 0) {
       throw new Error('Ctrl+C changed project or identity state');
     }
-    console.log('ttyglass Ctrl+C left project and identity state unchanged');
+    console.log('ttyglass Ctrl+C exited cleanly and left project and identity state unchanged');
   } finally {
     if (sessionId) {
       try { await ttyglassCommand(['stop', sessionId]); } catch {}
