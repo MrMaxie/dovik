@@ -192,11 +192,10 @@ body {
 .tui-preview {
   margin: 0;
   min-width: 0;
-  aspect-ratio: 1.72;
+  aspect-ratio: 2;
   container-type: inline-size;
   overflow: hidden;
   border: 1px solid var(--dovik-line);
-  border-radius: 0.2rem;
   background: #171c22;
   font-family: "Cascadia Mono", SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-variant-ligatures: none;
@@ -260,11 +259,13 @@ body {
 
 .tui-workspace {
   display: grid;
-  grid-template-columns: minmax(9.5rem, 29%) minmax(0, 1fr);
+  grid-template-columns: minmax(9rem, 24%) minmax(0, 1fr);
+  margin: 0;
   min-height: 0;
 }
 
 .tui-navigator {
+  margin: 0;
   min-width: 0;
   overflow: hidden;
   border-right: 1px solid #3c4249;
@@ -302,6 +303,10 @@ body {
   color: #7cd992;
 }
 
+.tui-process-row.is-running i {
+  color: #7cd992;
+}
+
 .tui-process-row.is-selected {
   background: #ff6b3d;
   color: #171c22;
@@ -314,6 +319,7 @@ body {
 .tui-process-view {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  margin: 0;
   min-width: 0;
   overflow: hidden;
 }
@@ -321,9 +327,14 @@ body {
 .tui-summary {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.45em 2ch;
+  gap: 0;
   margin: 0;
-  padding: 0.9em 1.25ch;
+  padding: 0.35em 1.25ch;
+}
+
+.tui-summary > div,
+.tui-summary dt {
+  margin: 0;
 }
 
 .tui-summary dt {
@@ -345,8 +356,9 @@ body {
 }
 
 .tui-output {
+  margin: 0;
   min-height: 0;
-  padding: 0.75em 1.25ch;
+  padding: 0.65em 1.25ch;
   border-top: 1px solid #3c4249;
   overflow: hidden;
 }
@@ -377,6 +389,7 @@ body {
 
 .tui-actions {
   gap: 1ch;
+  margin: 0;
   min-height: 1.315em;
   padding-inline: 1ch;
   background: #171c22;
@@ -401,6 +414,7 @@ body {
 
 .tui-shortcuts {
   gap: 1ch;
+  margin: 0;
   padding-inline: 1ch;
   overflow: hidden;
   color: #a6a49f;
