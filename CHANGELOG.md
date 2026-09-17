@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-17
+
 ### Added
 
 - Open a guided operator menu with bare `dovik`, or use `dovik whoami` for a bounded shell-prompt status of the selected project persona.
@@ -17,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Use arrow keys for TUI selection, `l` for refresh, and Enter as the primary action for processes, project identities, and personas.
 - Keep proxy-level project setup focused on transparent persona routing, and ask policy and permission questions only for isolated agent sessions.
 - Keep process previews focused on recent output while preserving safe terminal colors and offering a full scrollable viewer.
+- Publish new versions through native GitHub Release archives and npm packages, with archive names derived from the shared release version.
 
 ### Fixed
 
@@ -46,4 +49,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Build release artifacts from allowlisted inputs, publish SHA-256 checksums and attestations, and verify packages outside the source checkout.
 
 [1.0.0]: https://github.com/MrMaxie/dovik/releases/tag/v1.0.0
-[Unreleased]: https://github.com/MrMaxie/dovik/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/MrMaxie/dovik/compare/v1.0.0...v1.1.0
+[Unreleased]: https://github.com/MrMaxie/dovik/compare/v1.1.0...HEAD

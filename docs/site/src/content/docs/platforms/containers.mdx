@@ -1,19 +1,13 @@
 ---
 title: Docker and Podman
-description: Distinguish the Dovik daemon image from optional isolated identity sessions.
+description: Use Docker or Podman for optional isolated identity sessions.
 ---
 
-## Daemon image
+## Historical daemon image
 
-The Linux amd64 image runs `dovikd` as UID 10001 and publishes no TCP port:
+The Linux amd64 image published with Dovik 1.0.0 remains available as a historical artifact. New releases do not publish a GHCR image. Build the repository Dockerfile at an exact revision if you need a containerized daemon for development or verification.
 
-```console
-docker run --rm ghcr.io/mrmaxie/dovik:1.0.0
-```
-
-The daemon controls only processes inside its container. Mounting host process or container-engine control surfaces would violate the supported boundary.
-
-Release tags `1.0.0`, `1.0`, `1`, and `latest` point to the same verified image digest.
+A containerized daemon controls only processes inside its container. Mounting host process or container-engine control surfaces would violate the supported boundary.
 
 ## Isolated agent sessions
 

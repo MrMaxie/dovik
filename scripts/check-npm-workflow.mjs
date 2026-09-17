@@ -4,6 +4,9 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const source = await readFile(resolve(root, '.github', 'workflows', 'npm.yml'), 'utf8');
+const ci = await readFile(resolve(root, '.github', 'workflows', 'ci.yml'), 'utf8');
+const candidate = await readFile(resolve(root, '.github', 'workflows', 'candidate.yml'), 'utf8');
+const release = await readFile(resolve(root, '.github', 'workflows', 'release.yml'), 'utf8');
 const stage = await readFile(resolve(root, 'scripts', 'stage-npm-release.mjs'), 'utf8');
 assert.match(source, /release:\s*\n\s*types: \[published\]/);
 assert.match(source, /workflow_dispatch:/);
@@ -22,4 +25,12 @@ assert.match(stage, /'--provenance'/);
 for (const match of source.matchAll(/uses:\s+([^\s#]+)/g)) {
   assert.match(match[1], /^[^@]+@[0-9a-f]{40}$/, `Action is not pinned: ${match[1]}`);
 }
-process.stdout.write('verified npm workflow structure and stage-only permissions\n');
+for (const workflow of [ci, candidate, release]) {
+  assert.equal(workflow.includes('dovik-v1.0.0'), false);
+  assert.match(workflow, /dovik-v\$\{\{ (?:steps\.version|needs\.source)\.outputs\.version \}\}-\$\{\{ matrix\.target \}\}\.\$\{\{ matrix\.extension \}\}/);
+}
+assert.equal(release.includes('Publish GHCR image'), false);
+assert.equal(release.includes('Verify Scoop install'), false);
+assert.equal(release.includes('dist/dovik.json'), false);
+assert.equal(release.includes('ghcr.io/mrmaxie/dovik'), false);
+process.stdout.write('verified npm and release workflow contracts\n');

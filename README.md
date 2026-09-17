@@ -4,7 +4,7 @@ Dovik is a local supervisor for development processes. One daemon owns each regi
 
 Dovik also keeps project Git authors and GitHub accounts aligned through explicit identity personas, a transparent `gh` proxy, and optional governed agent sessions.
 
-Dovik 1.0.0 is the first public release.
+Dovik 1.1.0 is the current public release.
 
 ## What Dovik owns
 
@@ -28,7 +28,7 @@ dovikd --version
 
 The npm package supports Windows x64, Linux x64, macOS x64, and macOS arm64. It installs `dovik` and `dovikd` only. It does not replace or configure your `gh` command.
 
-Portable archives remain available from the [GitHub Release](https://github.com/MrMaxie/dovik/releases/tag/v1.0.0).
+Portable archives remain available from the [latest GitHub Release](https://github.com/MrMaxie/dovik/releases/latest).
 
 ## Quick start from source
 

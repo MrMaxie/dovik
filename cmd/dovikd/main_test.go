@@ -12,7 +12,7 @@ func TestVersionDoesNotStartDaemon(t *testing.T) {
 	if code := runCLI([]string{"--version"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
 	}
-	if stdout.String() != "dovikd 1.0.0\n" {
+	if stdout.String() != "dovikd 1.1.0\n" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }

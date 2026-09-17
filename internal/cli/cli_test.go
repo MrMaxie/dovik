@@ -22,7 +22,7 @@ func TestVersionAndHelpDoNotRequireDaemon(t *testing.T) {
 		arguments []string
 		contains  string
 	}{
-		{name: "version", arguments: []string{"--version"}, contains: "dovik 1.0.0"},
+		{name: "version", arguments: []string{"--version"}, contains: "dovik 1.1.0"},
 		{name: "root help", arguments: []string{"--help"}, contains: "Usage:"},
 		{name: "command help", arguments: []string{"--endpoint", "relative-is-invalid-for-a-daemon", "process", "--help"}, contains: "dovik process"},
 		{name: "subcommand help", arguments: []string{"process", "start", "--help"}, contains: "process start"},

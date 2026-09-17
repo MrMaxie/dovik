@@ -19,21 +19,24 @@ jobs:
         include:
           - runner: windows-latest
             target: windows-x64
-            archive: dovik-v1.0.0-windows-x64.zip
+            extension: zip
           - runner: ubuntu-latest
             target: linux-x64
-            archive: dovik-v1.0.0-linux-x64.tar.gz
+            extension: tar.gz
           - runner: macos-15-intel
             target: macos-x64
-            archive: dovik-v1.0.0-macos-x64.tar.gz
+            extension: tar.gz
           - runner: macos-15
             target: macos-arm64
-            archive: dovik-v1.0.0-macos-arm64.tar.gz
+            extension: tar.gz
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: jdx/mise-action@v4.2.3
+      - id: version
+        shell: bash
+        run: echo "version=$(go run ./cmd/dovik --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - run: just check
       - run: just ttyglass-install
       - run: just test-identity-interrupt
@@ -43,8 +46,8 @@ jobs:
         with:
           name: native-${{ matrix.target }}
           path: |
-            dist/${{ matrix.archive }}
-            dist/${{ matrix.archive }}.sha256
+            dist/dovik-v${{ steps.version.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}
+            dist/dovik-v${{ steps.version.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}.sha256
           if-no-files-found: error
           retention-days: 14
 

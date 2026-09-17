@@ -41,16 +41,16 @@ jobs:
         include:
           - runner: windows-latest
             target: windows-x64
-            archive: dovik-v1.0.0-windows-x64.zip
+            extension: zip
           - runner: ubuntu-latest
             target: linux-x64
-            archive: dovik-v1.0.0-linux-x64.tar.gz
+            extension: tar.gz
           - runner: macos-15-intel
             target: macos-x64
-            archive: dovik-v1.0.0-macos-x64.tar.gz
+            extension: tar.gz
           - runner: macos-15
             target: macos-arm64
-            archive: dovik-v1.0.0-macos-arm64.tar.gz
+            extension: tar.gz
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -59,13 +59,13 @@ jobs:
       - run: just ttyglass-install
       - run: just test-identity-interrupt
       - run: just package
-      - run: go run ./cmd/releasepack smoke --archive dist/${{ matrix.archive }}
+      - run: go run ./cmd/releasepack smoke --archive dist/dovik-v${{ needs.source.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-${{ matrix.target }}
           path: |
-            dist/${{ matrix.archive }}
-            dist/${{ matrix.archive }}.sha256
+            dist/dovik-v${{ needs.source.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}
+            dist/dovik-v${{ needs.source.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}.sha256
           if-no-files-found: error
 
   publish:
@@ -86,14 +86,12 @@ jobs:
           pattern: release-*
           path: dist
           merge-multiple: true
-      - run: go run ./cmd/releasepack scoop --archive dist/dovik-v${{ needs.source.outputs.version }}-windows-x64.zip --output dist/dovik.json
       - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: |
             dist/*.zip
             dist/*.tar.gz
             dist/*.sha256
-            dist/dovik.json
       - name: Prepare release notes
         shell: bash
         run: |
@@ -107,64 +105,25 @@ jobs:
           --notes-file "$RUNNER_TEMP/release-notes.md"
           dist/*
 
-  image:
-    name: Publish GHCR image
-    needs: [source, artifacts]
-    runs-on: ubuntu-latest
-    permissions:
-      attestations: write
-      contents: read
-      id-token: write
-      packages: write
-    outputs:
-      digest: ${{ steps.image.outputs.digest }}
-    steps:
-      - uses: actions/checkout@v6.0.3
-      - name: Log in to GHCR
-        shell: bash
-        run: echo "${{ github.token }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
-      - name: Build and push image
-        id: image
-        shell: bash
-        env:
-          VERSION: ${{ needs.source.outputs.version }}
-        run: |
-          docker buildx build --platform linux/amd64 --target runtime --push \
-            --build-arg "VERSION=$VERSION" --build-arg "REVISION=$GITHUB_SHA" \
-            --tag "ghcr.io/mrmaxie/dovik:$VERSION" \
-            --tag "ghcr.io/mrmaxie/dovik:1.0" \
-            --tag "ghcr.io/mrmaxie/dovik:1" \
-            --tag "ghcr.io/mrmaxie/dovik:latest" \
-            --metadata-file image-metadata.json .
-          digest=$(jq -r '.["containerimage.digest"]' image-metadata.json)
-          test "$digest" != "null"
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
-        with:
-          subject-name: ghcr.io/mrmaxie/dovik
-          subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
-          create-storage-record: false
-
   public-verify:
     name: Verify public release (${{ matrix.target }})
-    needs: [source, publish, image]
+    needs: [source, publish]
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: windows-latest
             target: windows-x64
-            archive: dovik-v1.0.0-windows-x64.zip
+            extension: zip
           - runner: ubuntu-latest
             target: linux-x64
-            archive: dovik-v1.0.0-linux-x64.tar.gz
+            extension: tar.gz
           - runner: macos-15-intel
             target: macos-x64
-            archive: dovik-v1.0.0-macos-x64.tar.gz
+            extension: tar.gz
           - runner: macos-15
             target: macos-arm64
-            archive: dovik-v1.0.0-macos-arm64.tar.gz
+            extension: tar.gz
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6.0.3
@@ -172,39 +131,10 @@ jobs:
       - name: Download public assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download ${{ github.ref_name }} --pattern "${{ matrix.archive }}*" --dir public-artifacts
-      - run: go run ./cmd/releasepack verify --archive public-artifacts/${{ matrix.archive }}
+        run: gh release download ${{ github.ref_name }} --pattern "dovik-v${{ needs.source.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}*" --dir public-artifacts
+      - run: go run ./cmd/releasepack verify --archive public-artifacts/dovik-v${{ needs.source.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}
       - name: Verify public archive attestation
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh attestation verify public-artifacts/${{ matrix.archive }} --repo ${{ github.repository }}
-      - run: go run ./cmd/releasepack smoke --archive public-artifacts/${{ matrix.archive }}
-      - if: matrix.target == 'linux-x64'
-        run: |
-          docker pull ghcr.io/mrmaxie/dovik@${{ needs.image.outputs.digest }}
-          test "$(docker run --rm --entrypoint id ghcr.io/mrmaxie/dovik@${{ needs.image.outputs.digest }} -u)" = "10001"
-          test -z "$(docker image inspect ghcr.io/mrmaxie/dovik@${{ needs.image.outputs.digest }} --format '{{json .Config.ExposedPorts}}' | grep -v '^null$')"
-      - if: matrix.target == 'linux-x64'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh attestation verify oci://ghcr.io/mrmaxie/dovik@${{ needs.image.outputs.digest }} --repo ${{ github.repository }}
-
-  scoop-verify:
-    name: Verify Scoop install
-    needs: [source, publish, image]
-    runs-on: windows-latest
-    steps:
-      - name: Install Scoop
-        shell: pwsh
-        run: |
-          Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
-          "$env:USERPROFILE\scoop\shims" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - name: Download release manifest
-        shell: pwsh
-        run: Invoke-WebRequest -Uri "https://github.com/MrMaxie/dovik/releases/download/v${{ needs.source.outputs.version }}/dovik.json" -OutFile "$env:RUNNER_TEMP/dovik.json"
-      - shell: pwsh
-        run: |
-          scoop install "$env:RUNNER_TEMP/dovik.json"
-          if ((dovik --version) -ne "dovik ${{ needs.source.outputs.version }}") { throw "Dovik version mismatch" }
-          scoop update dovik
-          scoop uninstall dovik
+        run: gh attestation verify public-artifacts/dovik-v${{ needs.source.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }} --repo ${{ github.repository }}
+      - run: go run ./cmd/releasepack smoke --archive public-artifacts/dovik-v${{ needs.source.outputs.version }}-${{ matrix.target }}.${{ matrix.extension }}

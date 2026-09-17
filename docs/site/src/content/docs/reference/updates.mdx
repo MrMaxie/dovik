@@ -1,6 +1,6 @@
 ---
 title: Updates
-description: Update npm, portable archives, the container image, or Scoop while preserving private state.
+description: Update npm or portable archives while preserving private state.
 ---
 
 ## npm
@@ -19,10 +19,4 @@ Download the new archive for the same platform, verify its checksum and attestat
 
 Private registry and identity state is stored outside the installation directory and is not removed when binaries are replaced. Keep a backup appropriate to your workstation before a major upgrade.
 
-## Scoop
-
-Use normal Scoop update and uninstall commands. The manifest updates `dovik` and `dovikd` together. It does not install or activate the optional `gh` proxy.
-
-## Container
-
-Pull the exact version tag before moving a deployment. Floating tags are provided for convenience, but an exact tag or digest is the reproducible choice.
+The Scoop manifest and GHCR image from 1.0.0 are historical artifacts and do not receive new versions.

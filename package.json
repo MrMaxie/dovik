@@ -1,6 +1,6 @@
 {
   "name": "dovik",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Supervise local development processes through one daemon, CLI, TUI, and MCP control plane.",
   "keywords": [
     "process-manager",
@@ -44,9 +44,9 @@
     "verify:npm": "node scripts/verify-npm-package.mjs"
   },
   "optionalDependencies": {
-    "@maxiedev/dovik-darwin-arm64": "1.0.0",
-    "@maxiedev/dovik-darwin-x64": "1.0.0",
-    "@maxiedev/dovik-linux-x64": "1.0.0",
-    "@maxiedev/dovik-win32-x64": "1.0.0"
+    "@maxiedev/dovik-darwin-arm64": "1.1.0",
+    "@maxiedev/dovik-darwin-x64": "1.1.0",
+    "@maxiedev/dovik-linux-x64": "1.1.0",
+    "@maxiedev/dovik-win32-x64": "1.1.0"
   }
 }
