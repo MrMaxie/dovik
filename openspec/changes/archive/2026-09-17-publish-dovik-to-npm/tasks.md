@@ -10,4 +10,4 @@
 - [x] 8. Add the stage-only OIDC workflow, exact release-asset assembly, deterministic packing, manifest checks, and four-platform clean-room verification.
 - [x] 9. Commit and push the npm distribution source and workflow to the default branch.
 - [x] 10. Create the protected `npm-production` GitHub environment and configure all five npm packages to trust only `MrMaxie/dovik`, `.github/workflows/npm.yml`, and that environment with staged publishing enabled and traditional tokens disabled.
-- [ ] 11. Run the non-staging workflow for `v1.0.0` to verify the checked-in release path without attempting to republish the immutable version.
+- [x] 11. Run the non-staging workflow for `v1.0.0` to verify the checked-in release path without attempting to republish the immutable version.
