@@ -376,10 +376,15 @@ body {
 }
 
 .tui-actions {
+  gap: 1ch;
   min-height: 1.315em;
   padding-inline: 1ch;
   background: #171c22;
   color: #a6a49f;
+}
+
+.tui-actions span {
+  white-space: nowrap;
 }
 
 .tui-actions b,
